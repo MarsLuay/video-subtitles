@@ -6,6 +6,7 @@ import { whisperModelId } from "./models";
 import type { SubtitleCue } from "../subtitles/cues";
 import { appendWindowCues, chunksToCues, pcmWindows } from "./audio";
 import { labelSpeakers } from "./diarize";
+import type { TranscribePcmResume } from "./resume";
 import {
   loadStagePercent,
   mergeFileProgress,
@@ -166,8 +167,30 @@ export async function transcribePcm(
   libDir: string,
   modelsDir: string,
   toUrl: (absPath: string) => string,
-  onProgress?: CreateProgressFn
+  onProgress?: CreateProgressFn,
+  resume: TranscribePcmResume = {}
 ): Promise<SubtitleCue[]> {
+  const duration = pcm.length / 16_000;
+  const windows = pcmWindows(pcm);
+  const startWindow = clampStartWindow(resume.startWindow, windows.length);
+  const cues: SubtitleCue[] = resume.cues ? resume.cues.map((cue) => ({ ...cue })) : [];
+  let fallback = resume.fallback ?? "";
+  const finish = async (): Promise<SubtitleCue[]> => {
+    onProgress?.(96);
+    const raw =
+      cues.length > 0
+        ? cues
+        : fallback
+          ? [{ start: 0, end: Math.max(0.5, duration), text: fallback }]
+          : null;
+    if (!raw) throw new Error("The transcriber returned no speech");
+    if (!settings.diarization) return raw;
+    await yieldToTracker();
+    const labeled = labelSpeakers(pcm, raw, settings.maxSpeakers);
+    onProgress?.(97);
+    return labeled;
+  };
+  if (startWindow >= windows.length) return finish();
   const path = nodeRequire<typeof import("path")>("path");
   onProgress?.(18);
   await ensureTranscriberLib(libDir);
@@ -203,17 +226,14 @@ export async function transcribePcm(
     applyWasmPaths(transformers, wasmPaths, false);
     return openAsr();
   });
-  const duration = pcm.length / 16_000;
-  const windows = pcmWindows(pcm);
-  onProgress?.(58);
+  onProgress?.(transcribeStagePercent(startWindow, windows.length));
   await yieldToTracker();
-  const cues: SubtitleCue[] = [];
-  let fallback = "";
   const transcribeStarted = Date.now();
   let firstWindowMs = 0;
   let remainingSec: number | null = null;
+  const sessionTotal = windows.length - startWindow;
   try {
-    for (let index = 0; index < windows.length; index += 1) {
+    for (let index = startWindow; index < windows.length; index += 1) {
       const part = windows[index];
       if (!part) continue;
       onProgress?.(transcribeStagePercent(index, windows.length), remainingSec);
@@ -222,16 +242,16 @@ export async function transcribePcm(
       try {
         result = await asr(new Float32Array(part.samples), generate);
       } catch (error) {
-        if (index !== 0) throw error;
+        if (index !== startWindow) throw error;
         applyWasmPaths(transformers, wasmPaths, false);
         if (typeof asr.dispose === "function") await asr.dispose();
         asr = await openAsr();
         result = await asr(new Float32Array(part.samples), generate);
       }
-      if (index === 0) firstWindowMs = Date.now() - transcribeStarted;
+      if (firstWindowMs === 0) firstWindowMs = Date.now() - transcribeStarted;
       remainingSec = remainingTranscribeSeconds({
-        completedWindows: index + 1,
-        totalWindows: windows.length,
+        completedWindows: index - startWindow + 1,
+        totalWindows: sessionTotal,
         elapsedMs: Date.now() - transcribeStarted,
         firstWindowMs
       });
@@ -246,21 +266,23 @@ export async function transcribePcm(
         const text = (result.text ?? "").replace(/\s+/g, " ").trim();
         if (text) fallback = fallback ? `${fallback} ${text}` : text;
       }
+      try {
+        resume.onCheckpoint?.({
+          nextWindow: index + 1,
+          cues: cues.map((cue) => ({ ...cue })),
+          fallback
+        });
+      } catch {
+        /* keep transcribing */
+      }
     }
-    onProgress?.(96);
-    const raw =
-      cues.length > 0
-        ? cues
-        : fallback
-          ? [{ start: 0, end: Math.max(0.5, duration), text: fallback }]
-          : null;
-    if (!raw) throw new Error("The transcriber returned no speech");
-    if (!settings.diarization) return raw;
-    await yieldToTracker();
-    const labeled = labelSpeakers(pcm, raw, settings.maxSpeakers);
-    onProgress?.(97);
-    return labeled;
+    return finish();
   } finally {
     if (typeof asr.dispose === "function") await asr.dispose();
   }
+}
+
+function clampStartWindow(value: number | undefined, total: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return 0;
+  return Math.min(total, Math.round(value));
 }

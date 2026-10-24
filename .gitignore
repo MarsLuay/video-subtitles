@@ -1,5 +1,7 @@
 node_modules/
 transcriber/
+create-resume.json
+create-resume.json.tmp
 main.js
 main.js.map
 .DS_Store

@@ -30,6 +30,7 @@ import {
   transcribeStagePercent
 } from "../src/transcribe/progress";
 import { labelSpeakers, prefixSpeaker } from "../src/transcribe/diarize";
+import { createResumeJob, parseResumeState, resumeMatches } from "../src/transcribe/resume";
 import { upsertGeneratedTrack } from "../src/subtitles/generatedTrack";
 import { emptyStore } from "../src/subtitles/store";
 import { VideoSubtitlesSettingTab, type SettingsHost } from "../src/settingsTab";
@@ -161,6 +162,33 @@ describe("diarization", () => {
     );
     expect(labeled[0]?.text).toMatch(/^Speaker 1: loud$/);
     expect(labeled[1]?.text).toMatch(/^Speaker 2: quiet$/);
+  });
+});
+
+describe("create resume", () => {
+  it("resumes the same video and transcriber settings, and starts over if those changed", () => {
+    const job = createResumeJob({
+      videoPath: "/vault/clip.mp4",
+      size: 4096,
+      mtimeMs: 1700000000000,
+      pcmLength: 48_000,
+      windowCount: 4,
+      settings: DEFAULT_SETTINGS
+    });
+    const saved = {
+      ...job,
+      nextWindow: 2,
+      cues: [{ start: 0, end: 1, text: "hello" }],
+      fallback: ""
+    };
+    expect(resumeMatches(saved, job)).toBe(true);
+    expect(parseResumeState(saved)?.nextWindow).toBe(2);
+    expect(resumeMatches({ ...saved, transcriberAccuracy: "tiny" }, job)).toBe(false);
+    expect(resumeMatches({ ...saved, transcriberLanguage: "fr" }, job)).toBe(false);
+    expect(resumeMatches({ ...saved, size: 8 }, job)).toBe(false);
+    expect(resumeMatches({ ...saved, nextWindow: 5 }, job)).toBe(false);
+    expect(resumeMatches({ ...saved, nextWindow: 4 }, job)).toBe(true);
+    expect(parseResumeState({ ...saved, cues: [{ start: 0 }] })).toBeNull();
   });
 });
 

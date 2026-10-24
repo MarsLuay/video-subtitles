@@ -1,6 +1,6 @@
 import { Menu, Notice, Platform, TFile, type Plugin } from "obsidian";
 import { upsertGeneratedTrack } from "../subtitles/generatedTrack";
-import { cleanupTranscriber, transcriberRoot, transcribeVideoFile, vaultFileAbsPath } from "../transcribe/runtime";
+import { cleanupTranscriber, clearCreateResume, transcriberRoot, transcribeVideoFile, vaultFileAbsPath } from "../transcribe/runtime";
 import { pickAccuracyForHardware } from "../transcribe/hardware";
 import { readHardware } from "../transcribe/node";
 import { showCreateProgressNotice } from "../ui/createProgressNotice";
@@ -294,6 +294,7 @@ class VideoSession {
       );
       if (cues.length === 0) {
         status.hide();
+        clearCreateResume(this.plugin);
         new Notice("The transcriber returned no speech.");
         return;
       }
@@ -302,7 +303,10 @@ class VideoSession {
       status.setPercent(98);
       const saved = await this.persist();
       status.hide();
-      if (saved) new Notice("Added generated subtitles to the video.");
+      if (saved) {
+        clearCreateResume(this.plugin);
+        new Notice("Added generated subtitles to the video.");
+      }
     } catch (error) {
       console.error(formatError(error));
       status.hide();

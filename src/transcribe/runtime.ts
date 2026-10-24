@@ -1,10 +1,18 @@
 import { FileSystemAdapter, type Plugin, type TFile } from "obsidian";
 import { existsFile, removePath } from "./download";
 import { extractWav, ensureFfmpeg } from "./ffmpeg";
-import { decodeVideoAudio, readWavPcm } from "./audio";
+import { decodeVideoAudio, pcmWindows, readWavPcm } from "./audio";
 import { nodeRequire } from "./node";
 import { transcribePcm } from "./lib";
 import { yieldToTracker, type CreateProgressFn } from "./progress";
+import {
+  CREATE_RESUME_FILE,
+  clearCreateResume as removeResumeFile,
+  createResumeJob,
+  readCreateResume,
+  resumeMatches,
+  writeCreateResume
+} from "./resume";
 import { toArrayBuffer } from "../subtitles/absorb/bytes";
 import type { CreateTranscribeSettings } from "../settings";
 import type { SubtitleCue } from "../subtitles/cues";
@@ -35,6 +43,16 @@ export function transcriberPaths(root: string): { lib: string; models: string; b
 export function transcriberCleanupPath(root: string, keep: boolean): string {
   const trimmed = root.replace(/[/\\]+$/, "");
   return keep ? `${trimmed}/tmp` : trimmed;
+}
+
+export function createResumePath(plugin: Plugin): string {
+  const path = nodeRequire<typeof import("path")>("path");
+  return path.join(path.dirname(transcriberRoot(plugin)), CREATE_RESUME_FILE);
+}
+
+export function clearCreateResume(plugin: Plugin): void {
+  const file = createResumePath(plugin);
+  removeResumeFile(file);
 }
 
 export function cleanupTranscriber(root: string, keep: boolean): void {
@@ -102,5 +120,42 @@ export async function transcribeVideoFile(
   if (pcm.length === 0) throw new Error("The video has no audio to transcribe");
   onProgress?.(15);
   await yieldToTracker();
-  return transcribePcm(pcm, settings, dirs.lib, dirs.models, (file) => fileResourceUrl(plugin, file), onProgress);
+  const resumeFile = createResumePath(plugin);
+  const job = createResumeJob({
+    videoPath,
+    size,
+    mtimeMs: fs.statSync(videoPath).mtimeMs,
+    pcmLength: pcm.length,
+    windowCount: pcmWindows(pcm).length,
+    settings
+  });
+  const saved = readCreateResume(resumeFile);
+  const resume = resumeMatches(saved, job) ? saved : null;
+  try {
+    return await transcribePcm(
+      pcm,
+      settings,
+      dirs.lib,
+      dirs.models,
+      (file) => fileResourceUrl(plugin, file),
+      onProgress,
+      {
+        startWindow: resume?.nextWindow,
+        cues: resume?.cues,
+        fallback: resume?.fallback,
+        onCheckpoint: (state) => {
+          try {
+            writeCreateResume(resumeFile, { ...job, ...state });
+          } catch {
+            /* keep transcribing */
+          }
+        }
+      }
+    );
+  } catch (error) {
+    if (error instanceof Error && error.message === "The transcriber returned no speech") {
+      clearCreateResume(plugin);
+    }
+    throw error;
+  }
 }
