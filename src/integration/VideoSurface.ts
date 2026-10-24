@@ -92,10 +92,7 @@ class VideoSession {
         "aria-label": "Full screen"
       }
     });
-    if (DEBUG_SHOW_OVERFLOW_HIT) {
-      this.hitEl.addClass("is-debug");
-      this.fsHitEl.addClass("is-debug");
-    }
+    if (DEBUG_SHOW_OVERFLOW_HIT) this.hitEl.addClass("is-debug");
     this.bindVideoFullscreen();
     this.syncHitSize();
     this.resizeObserver = new ResizeObserver(() => this.syncHitSize());
