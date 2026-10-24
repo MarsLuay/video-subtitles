@@ -1,6 +1,8 @@
 import type { SubtitleCue } from "../subtitles/cues";
 
 export const WHISPER_SAMPLE_RATE = 16_000;
+export const WHISPER_CHUNK_SECONDS = 30;
+export const WHISPER_STRIDE_SECONDS = 5;
 
 export function mixToMono(buffer: AudioBuffer): Float32Array {
   const length = buffer.length;
@@ -90,6 +92,39 @@ export function readWavPcm(bytes: Uint8Array): Float32Array {
   }
   if (!pcm) throw new Error("wav has no PCM data");
   return pcm;
+}
+
+export function pcmWindows(
+  pcm: Float32Array,
+  sampleRate = WHISPER_SAMPLE_RATE,
+  chunkSec = WHISPER_CHUNK_SECONDS,
+  strideSec = WHISPER_STRIDE_SECONDS
+): { samples: Float32Array; offsetSec: number }[] {
+  const chunk = Math.max(1, Math.round(chunkSec * sampleRate));
+  const stride = Math.max(0, Math.round(strideSec * sampleRate));
+  const hop = Math.max(1, chunk - 2 * stride);
+  if (pcm.length <= chunk) return [{ samples: pcm, offsetSec: 0 }];
+  const windows: { samples: Float32Array; offsetSec: number }[] = [];
+  for (let start = 0; start < pcm.length; start += hop) {
+    const end = Math.min(pcm.length, start + chunk);
+    windows.push({ samples: pcm.subarray(start, end), offsetSec: start / sampleRate });
+    if (end >= pcm.length) break;
+  }
+  return windows;
+}
+
+export function appendWindowCues(all: SubtitleCue[], next: readonly SubtitleCue[]): void {
+  for (const cue of next) {
+    const last = all[all.length - 1];
+    if (!last) {
+      all.push({ ...cue });
+      continue;
+    }
+    if (cue.end <= last.end) continue;
+    const start = Math.max(cue.start, last.end);
+    if (start >= cue.end) continue;
+    all.push({ start, end: cue.end, text: cue.text });
+  }
 }
 
 export function chunksToCues(

@@ -4,6 +4,7 @@ import { extractWav, ensureFfmpeg } from "./ffmpeg";
 import { decodeVideoAudio, readWavPcm } from "./audio";
 import { nodeRequire } from "./node";
 import { transcribePcm } from "./lib";
+import { yieldToTracker } from "./progress";
 import { toArrayBuffer } from "../subtitles/absorb/bytes";
 import type { TranscriberAccuracy } from "../settings";
 import type { SubtitleCue } from "../subtitles/cues";
@@ -100,5 +101,6 @@ export async function transcribeVideoFile(
   }
   if (pcm.length === 0) throw new Error("The video has no audio to transcribe");
   onProgress?.(15);
+  await yieldToTracker();
   return transcribePcm(pcm, accuracy, dirs.lib, dirs.models, (file) => fileResourceUrl(plugin, file), onProgress);
 }

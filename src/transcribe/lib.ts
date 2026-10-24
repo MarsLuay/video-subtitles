@@ -4,8 +4,8 @@ import { fileCache } from "./cache";
 import type { TranscriberAccuracy } from "../settings";
 import { whisperModelId } from "./models";
 import type { SubtitleCue } from "../subtitles/cues";
-import { chunksToCues } from "./audio";
-import { loadStagePercent, mergeFileProgress, startEstimate, type ProgressEvent } from "./progress";
+import { appendWindowCues, chunksToCues, pcmWindows } from "./audio";
+import { loadStagePercent, mergeFileProgress, transcribeStagePercent, yieldToTracker, type ProgressEvent } from "./progress";
 
 export const TRANSFORMERS_VERSION = "4.3.1";
 export const ONNXRUNTIME_WEB_VERSION = "1.31.0-dev.20260914-8d85527a0";
@@ -181,22 +181,36 @@ export async function transcribePcm(
     }
   });
   const duration = pcm.length / 16_000;
+  const windows = pcmWindows(pcm);
   onProgress?.(58);
-  const stopEstimate = startEstimate(58, 94, duration, (percent) => onProgress?.(percent), window);
+  await yieldToTracker();
+  const cues: SubtitleCue[] = [];
+  let fallback = "";
   try {
-    const result = await asr(new Float32Array(pcm), {
-      return_timestamps: true,
-      chunk_length_s: 30,
-      stride_length_s: 5
-    });
+    for (let index = 0; index < windows.length; index += 1) {
+      const part = windows[index];
+      if (!part) continue;
+      onProgress?.(transcribeStagePercent(index, windows.length));
+      await yieldToTracker();
+      const result = await asr(new Float32Array(part.samples), {
+        return_timestamps: true
+      });
+      const shifted = chunksToCues(result.chunks ?? []).map((cue) => ({
+        start: cue.start + part.offsetSec,
+        end: cue.end + part.offsetSec,
+        text: cue.text
+      }));
+      appendWindowCues(cues, shifted);
+      if (shifted.length === 0) {
+        const text = (result.text ?? "").replace(/\s+/g, " ").trim();
+        if (text) fallback = fallback ? `${fallback} ${text}` : text;
+      }
+    }
     onProgress?.(96);
-    const cues = chunksToCues(result.chunks ?? []);
     if (cues.length > 0) return cues;
-    const text = (result.text ?? "").replace(/\s+/g, " ").trim();
-    if (!text) throw new Error("The transcriber returned no speech");
-    return [{ start: 0, end: Math.max(0.5, duration), text }];
+    if (!fallback) throw new Error("The transcriber returned no speech");
+    return [{ start: 0, end: Math.max(0.5, duration), text: fallback }];
   } finally {
-    stopEstimate();
     if (typeof asr.dispose === "function") await asr.dispose();
   }
 }

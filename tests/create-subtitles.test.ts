@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { chunksToCues, mixToMono, readWavPcm, resampleLinear } from "../src/transcribe/audio";
+import {
+  appendWindowCues,
+  chunksToCues,
+  mixToMono,
+  pcmWindows,
+  readWavPcm,
+  resampleLinear,
+  WHISPER_SAMPLE_RATE
+} from "../src/transcribe/audio";
 import { ffmpegAsset, FFMPEG_RELEASE } from "../src/transcribe/ffmpeg";
 import { pickAccuracyForHardware } from "../src/transcribe/hardware";
 import {
@@ -16,7 +24,8 @@ import {
   loadStagePercent,
   mergeFileProgress,
   monotonicPercent,
-  startEstimate
+  startEstimate,
+  transcribeStagePercent
 } from "../src/transcribe/progress";
 import { upsertGeneratedTrack } from "../src/subtitles/generatedTrack";
 import { emptyStore } from "../src/subtitles/store";
@@ -107,6 +116,8 @@ describe("create progress", () => {
     expect(mergeFileProgress(files, { file: "b", status: "done", total: 100 })).toBe(0.75);
     expect(loadStagePercent(0)).toBe(20);
     expect(loadStagePercent(1)).toBe(55);
+    expect(transcribeStagePercent(0, 4)).toBe(58);
+    expect(transcribeStagePercent(2, 4)).toBe(76);
   });
 
   it("ticks an estimate while transcription is running", () => {
@@ -164,5 +175,18 @@ describe("audio helpers", () => {
       { text: " ", timestamp: [1.5, 2] },
       { text: "skip", timestamp: [3, null] }
     ])).toEqual([{ start: 0, end: 1.5, text: "hello" }]);
+    const short = pcmWindows(new Float32Array(5 * WHISPER_SAMPLE_RATE));
+    expect(short).toHaveLength(1);
+    expect(short[0]?.offsetSec).toBe(0);
+    const long = pcmWindows(new Float32Array(50 * WHISPER_SAMPLE_RATE));
+    expect(long.length).toBeGreaterThan(1);
+    expect(long[1]?.offsetSec).toBe(20);
+    const merged: { start: number; end: number; text: string }[] = [];
+    appendWindowCues(merged, [{ start: 0, end: 30, text: "a" }]);
+    appendWindowCues(merged, [{ start: 20, end: 50, text: "b" }]);
+    expect(merged).toEqual([
+      { start: 0, end: 30, text: "a" },
+      { start: 30, end: 50, text: "b" }
+    ]);
   });
 });

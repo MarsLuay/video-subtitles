@@ -52,6 +52,19 @@ export function loadStagePercent(fraction: number): number {
   return 20 + 35 * Math.min(1, Math.max(0, fraction));
 }
 
+export const TRACKER_YIELD_MS = 50;
+
+export function yieldToTracker(ms = TRACKER_YIELD_MS): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+export function transcribeStagePercent(index: number, total: number): number {
+  if (total <= 0) return 58;
+  return 58 + (36 * index) / total;
+}
+
 export function startEstimate<T>(
   from: number,
   to: number,
