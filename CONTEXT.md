@@ -5,8 +5,8 @@ Import a subtitle file from the video more-options menu and keep that track insi
 ## Language
 
 **More options**:
-The three-dot control on the video player chrome.
-_Avoid_: overflow, kebab, native CC button
+The pane three-dot control that opens `onPaneMenu` / `file-menu` with source `more-options`.
+_Avoid_: overlay button, Chromium overflow, kebab
 
 **Off**:
 The menu row that hides captions without deleting the stored track.

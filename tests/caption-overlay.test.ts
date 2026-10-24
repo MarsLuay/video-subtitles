@@ -20,8 +20,7 @@ describe("caption overlay helpers", () => {
     expect(labelFromFilename("lecture.srt")).toBe("lecture");
     const rows = buildSubtitleMenuRows({
       tracks: [{ id: "a", label: labelFromFilename("lecture.srt") }],
-      activeTrackId: "a",
-      playbackRate: 1
+      activeTrackId: "a"
     });
     expect(rows.some((row) => row.kind === "track" && row.label === "lecture" && row.checked)).toBe(true);
   });

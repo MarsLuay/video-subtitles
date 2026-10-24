@@ -40,6 +40,9 @@ export class MenuItem {
   setChecked(_checked: boolean): this {
     return this;
   }
+  setSection(_section: string): this {
+    return this;
+  }
   onClick(_cb: () => void): this {
     return this;
   }
