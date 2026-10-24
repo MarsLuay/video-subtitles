@@ -50,6 +50,26 @@ export function isOverflowButtonHit(
   return x >= left && x <= right && y >= top && y <= bottom;
 }
 
+export function hitControlKind(
+  bounds: { width: number; height: number; left: number; top: number },
+  clientX: number,
+  clientY: number,
+  overflow: OverflowHitBox,
+  fullscreen: OverflowHitBox
+): "overflow" | "fullscreen" | null {
+  if (isOverflowButtonHit(bounds, clientX, clientY, overflow)) return "overflow";
+  if (isOverflowButtonHit(bounds, clientX, clientY, fullscreen)) return "fullscreen";
+  return null;
+}
+
+export function shouldStealControlClick(
+  paused: boolean,
+  hovering: boolean,
+  kind: "overflow" | "fullscreen" | null
+): boolean {
+  return kind !== null && overflowControlsVisible(paused, hovering);
+}
+
 export function measureOverflowHit(video: HTMLVideoElement): OverflowHitBox {
   const fallback: OverflowHitBox = {
     width: FALLBACK_OVERFLOW_BUTTON,

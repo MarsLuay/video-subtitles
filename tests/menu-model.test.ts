@@ -2,7 +2,17 @@ import { describe, expect, it } from "vitest";
 import { Menu } from "obsidian";
 import { buildSubtitleMenuRows, playbackSpeedLabel } from "../src/ui/menuModel";
 import { toggleOverflowMenu } from "../src/ui/overflowMenu";
-import { DEBUG_SHOW_OVERFLOW_HIT, isOverflowButtonHit, measureFullscreenHit, measureOverflowHit, overflowControlsVisible } from "../src/ui/overflowButton";
+import {
+  DEBUG_SHOW_OVERFLOW_HIT,
+  FALLBACK_OVERFLOW_BUTTON,
+  OVERFLOW_BUTTON_BOTTOM_INSET,
+  hitControlKind,
+  isOverflowButtonHit,
+  measureFullscreenHit,
+  measureOverflowHit,
+  overflowControlsVisible,
+  shouldStealControlClick
+} from "../src/ui/overflowButton";
 import { currentFullscreenElement, fullscreenMenuParent, isPlayerFullscreen } from "../src/ui/fullscreen";
 
 describe("player overflow 3-dot", () => {
@@ -24,6 +34,19 @@ describe("player overflow 3-dot", () => {
     expect(overflowControlsVisible(true, false)).toBe(true);
     expect(overflowControlsVisible(false, true)).toBe(true);
     expect(overflowControlsVisible(false, false)).toBe(false);
+    const bounds = { width: 640, height: 360, left: 10, top: 20 };
+    const overflow = {
+      width: FALLBACK_OVERFLOW_BUTTON,
+      height: FALLBACK_OVERFLOW_BUTTON,
+      right: 0,
+      bottom: OVERFLOW_BUTTON_BOTTOM_INSET
+    };
+    const fullscreen = { ...overflow, right: FALLBACK_OVERFLOW_BUTTON };
+    expect(hitControlKind(bounds, 630, 330, overflow, fullscreen)).toBe("overflow");
+    expect(hitControlKind(bounds, 580, 330, overflow, fullscreen)).toBe("fullscreen");
+    expect(hitControlKind(bounds, 200, 200, overflow, fullscreen)).toBeNull();
+    expect(shouldStealControlClick(false, true, "overflow")).toBe(true);
+    expect(shouldStealControlClick(false, false, "overflow")).toBe(false);
   });
 
   it("uses the public overflow-button pseudo size when Chromium exposes it", () => {

@@ -100,7 +100,7 @@
   background: none;
   box-shadow: none;
   opacity: 0;
-  cursor: pointer;
+  pointer-events: none;
 }
 
 .video-subtitles-overflow-hit.is-debug {

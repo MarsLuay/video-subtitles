@@ -8,7 +8,13 @@ import type { VideoSubtitleSettings } from "../settings";
 import { resolveVideoFile } from "./resolveVideoFile";
 import { renderCueOverlay } from "../ui/captionOverlay";
 import { toggleOverflowMenu } from "../ui/overflowMenu";
-import { DEBUG_SHOW_OVERFLOW_HIT, measureFullscreenHit, measureOverflowHit } from "../ui/overflowButton";
+import {
+  DEBUG_SHOW_OVERFLOW_HIT,
+  hitControlKind,
+  measureFullscreenHit,
+  measureOverflowHit,
+  shouldStealControlClick
+} from "../ui/overflowButton";
 import {
   currentFullscreenElement,
   exitFullscreen,
@@ -54,6 +60,7 @@ class VideoSession {
   private readonly fsHitEl: HTMLElement;
   private readonly cuesEl: HTMLElement;
   private redirectingFullscreen = false;
+  private hovering = false;
   private nativeRequestFullscreen: HTMLVideoElement["requestFullscreen"] | null = null;
   private readonly onTime = (): void => this.paintCues();
   private persistQueue: Promise<void> = Promise.resolve();
@@ -97,14 +104,11 @@ class VideoSession {
     this.video.addEventListener("play", this.armHit);
     this.video.addEventListener("pause", this.armHit);
     this.video.addEventListener("dblclick", this.onVideoDblClick, true);
-    this.player.addEventListener("mousemove", this.armHit);
+    this.video.addEventListener("pointerdown", this.onVideoHitPointer, true);
+    this.video.addEventListener("mousedown", this.onVideoHitPointer, true);
+    this.video.addEventListener("click", this.onVideoHitClick, true);
+    this.player.addEventListener("mousemove", this.onPlayerMove);
     this.player.addEventListener("mouseleave", this.onPlayerLeave);
-    this.hitEl.addEventListener("pointerdown", this.onHitPointer);
-    this.hitEl.addEventListener("mousedown", this.onHitPointer);
-    this.hitEl.addEventListener("click", this.onHitClick);
-    this.fsHitEl.addEventListener("pointerdown", this.onHitPointer);
-    this.fsHitEl.addEventListener("mousedown", this.onHitPointer);
-    this.fsHitEl.addEventListener("click", this.onFullscreenHitClick);
     const doc = this.video.ownerDocument;
     doc.addEventListener("fullscreenchange", this.onFullscreenChange);
     doc.addEventListener("webkitfullscreenchange", this.onFullscreenChange);
@@ -138,14 +142,11 @@ class VideoSession {
     this.video.removeEventListener("play", this.armHit);
     this.video.removeEventListener("pause", this.armHit);
     this.video.removeEventListener("dblclick", this.onVideoDblClick, true);
-    this.player.removeEventListener("mousemove", this.armHit);
+    this.video.removeEventListener("pointerdown", this.onVideoHitPointer, true);
+    this.video.removeEventListener("mousedown", this.onVideoHitPointer, true);
+    this.video.removeEventListener("click", this.onVideoHitClick, true);
+    this.player.removeEventListener("mousemove", this.onPlayerMove);
     this.player.removeEventListener("mouseleave", this.onPlayerLeave);
-    this.hitEl.removeEventListener("pointerdown", this.onHitPointer);
-    this.hitEl.removeEventListener("mousedown", this.onHitPointer);
-    this.hitEl.removeEventListener("click", this.onHitClick);
-    this.fsHitEl.removeEventListener("pointerdown", this.onHitPointer);
-    this.fsHitEl.removeEventListener("mousedown", this.onHitPointer);
-    this.fsHitEl.removeEventListener("click", this.onFullscreenHitClick);
     const doc = this.video.ownerDocument;
     doc.removeEventListener("fullscreenchange", this.onFullscreenChange);
     doc.removeEventListener("webkitfullscreenchange", this.onFullscreenChange);
@@ -192,8 +193,45 @@ class VideoSession {
     }
   };
 
+  private readonly onPlayerMove = (): void => {
+    this.hovering = true;
+    this.armHit();
+  };
+
   private readonly onPlayerLeave = (): void => {
+    this.hovering = false;
     if (!this.video.paused) this.setHitsIdle(true);
+  };
+
+  private controlKind(event: MouseEvent): "overflow" | "fullscreen" | null {
+    const rect = this.video.getBoundingClientRect();
+    return hitControlKind(
+      { width: rect.width, height: rect.height, left: rect.left, top: rect.top },
+      event.clientX,
+      event.clientY,
+      measureOverflowHit(this.video),
+      measureFullscreenHit(this.video)
+    );
+  }
+
+  private stealControlEvent(event: Event, cancelDefault: boolean): "overflow" | "fullscreen" | null {
+    if (!(event instanceof MouseEvent)) return null;
+    const kind = this.controlKind(event);
+    if (!shouldStealControlClick(this.video.paused, this.hovering, kind)) return null;
+    if (cancelDefault) event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    return kind;
+  }
+
+  private readonly onVideoHitPointer = (event: Event): void => {
+    this.stealControlEvent(event, false);
+  };
+
+  private readonly onVideoHitClick = (event: MouseEvent): void => {
+    const kind = this.stealControlEvent(event, true);
+    if (kind === "overflow") this.openMenu(event);
+    if (kind === "fullscreen") void this.togglePlayerFullscreen();
   };
 
   private bindVideoFullscreen(): void {
@@ -225,12 +263,6 @@ class VideoSession {
     void this.togglePlayerFullscreen();
   };
 
-  private readonly onFullscreenHitClick = (event: MouseEvent): void => {
-    event.preventDefault();
-    event.stopPropagation();
-    void this.togglePlayerFullscreen();
-  };
-
   private async togglePlayerFullscreen(): Promise<void> {
     const doc = this.video.ownerDocument;
     try {
@@ -257,16 +289,6 @@ class VideoSession {
       this.armHit();
     }
   }
-
-  private readonly onHitPointer = (event: Event): void => {
-    event.stopPropagation();
-  };
-
-  private readonly onHitClick = (event: MouseEvent): void => {
-    event.preventDefault();
-    event.stopPropagation();
-    this.openMenu(event);
-  };
 
   private openMenu(event: MouseEvent): void {
     const menu = toggleOverflowMenu(this.menu, {
