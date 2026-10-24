@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import { chunksToCues, mixToMono, readWavPcm, resampleLinear } from "../src/transcribe/audio";
 import { ffmpegAsset, FFMPEG_RELEASE } from "../src/transcribe/ffmpeg";
 import { pickAccuracyForHardware } from "../src/transcribe/hardware";
-import { ONNXRUNTIME_WEB_VERSION, TRANSFORMERS_VERSION, transcriberLibFiles } from "../src/transcribe/lib";
+import {
+  forceWebOnnxSource,
+  inferenceDevice,
+  ONNXRUNTIME_WEB_VERSION,
+  TRANSFORMERS_VERSION,
+  transcriberLibFiles
+} from "../src/transcribe/lib";
 import { whisperModelId } from "../src/transcribe/models";
 import { transcriberCleanupPath } from "../src/transcribe/runtime";
 import { upsertGeneratedTrack } from "../src/subtitles/generatedTrack";
@@ -95,6 +101,8 @@ describe("transcriber runtime files", () => {
     expect(ffmpeg?.url).toBe(`https://github.com/eugeneware/ffmpeg-static/releases/download/${FFMPEG_RELEASE}/ffmpeg-darwin-arm64.gz`);
     expect(ffmpegAsset("win32", "x64")?.binary).toBe("ffmpeg.exe");
     expect(ffmpegAsset("sunos", "x64")).toBeNull();
+    expect(inferenceDevice()).toBe("wasm");
+    expect(forceWebOnnxSource('vA=bA&&process?.release?.name==="node"&&!Ic')).toBe("vA=bA&&false&&!Ic");
   });
 
   it("deletes the whole transcriber unless keep is on", () => {

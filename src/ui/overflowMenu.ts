@@ -16,6 +16,7 @@ export function openOverflowMenu(options: {
   onImport: () => void;
 }): void {
   const menu = new Menu();
+  menu.setUseNativeMenu(false);
   for (const row of buildSubtitleMenuRows({
     tracks: options.tracks,
     activeTrackId: options.activeTrackId
@@ -76,5 +77,8 @@ export function openOverflowMenu(options: {
       item.setTitle("Import").setIcon("lucide-folder-open").onClick(() => options.onImport());
     });
   }
-  menu.showAtMouseEvent(options.event);
+  const doc = (options.event.target instanceof Node
+    ? options.event.target.ownerDocument
+    : options.event.view?.document) ?? undefined;
+  menu.showAtPosition({ x: options.event.clientX, y: options.event.clientY }, doc);
 }

@@ -26,6 +26,15 @@ type VideoSubtitlesHost = Plugin & {
   saveSettings: () => Promise<void>;
 };
 
+function formatError(error: unknown): string {
+  if (error instanceof Error) return error.stack || `${error.name}: ${error.message}`;
+  try {
+    return JSON.stringify(error) ?? String(error);
+  } catch {
+    return String(error);
+  }
+}
+
 class VideoSession {
   private store: AbsorbedStore = emptyStore();
   private file: TFile | null = null;
@@ -202,7 +211,7 @@ class VideoSession {
       link.detach();
       URL.revokeObjectURL(url);
     } catch (error) {
-      console.error(error);
+      console.error(formatError(error));
       new Notice("Could not download the video.");
     }
   }
@@ -285,16 +294,17 @@ class VideoSession {
       status.hide();
       if (saved) new Notice("Added generated subtitles to the video.");
     } catch (error) {
-      console.error(error);
+      console.error(formatError(error));
       status.hide();
-      new Notice(error instanceof Error ? error.message : "Could not create subtitles.");
+      const message = error instanceof Error && error.message ? error.message : "Could not create subtitles.";
+      new Notice(message);
     } finally {
       this.creating = false;
       if (root) {
         try {
           cleanupTranscriber(root, keep);
         } catch (error) {
-          console.error(error);
+          console.error(formatError(error));
         }
       }
     }
@@ -335,7 +345,7 @@ class VideoSession {
       } catch {
         // Keep going; playback still has the in-memory track.
       }
-      console.error(error);
+      console.error(formatError(error));
       new Notice("Could not store subtitles inside the video. The track still works until you close it.");
       return false;
     }
@@ -359,6 +369,7 @@ class VideoSession {
 
 export class VideoSurfaceManager {
   private readonly sessions = new Map<HTMLVideoElement, VideoSession>();
+  private readonly watchedDocs = new Set<Document>();
   private observer: MutationObserver | null = null;
   private scanTimer = 0;
 
@@ -367,10 +378,10 @@ export class VideoSurfaceManager {
   start(): void {
     const workspace = this.plugin.app.workspace;
     this.observer = new MutationObserver(() => this.scheduleScan());
-    this.observer.observe(workspace.containerEl, { childList: true, subtree: true });
     this.plugin.register(() => this.dispose());
-    this.plugin.registerEvent(workspace.on("layout-change", () => this.scheduleScan()));
+    this.plugin.registerEvent(workspace.on("layout-change", () => this.scan()));
     this.plugin.registerEvent(workspace.on("file-open", () => this.scheduleScan()));
+    this.plugin.registerEvent(workspace.on("window-open", () => this.scan()));
     this.scan();
   }
 
@@ -380,9 +391,30 @@ export class VideoSurfaceManager {
     this.scanTimer = win.setTimeout(() => this.scan(), 50);
   }
 
+  private workspaceVideos(): HTMLVideoElement[] {
+    const videos: HTMLVideoElement[] = [];
+    this.plugin.app.workspace.iterateAllLeaves((leaf) => {
+      videos.push(...Array.from(leaf.view.containerEl.querySelectorAll("video")));
+    });
+    return videos;
+  }
+
+  private watchDocuments(): void {
+    if (!this.observer) return;
+    const docs = new Set<Document>();
+    this.plugin.app.workspace.iterateAllLeaves((leaf) => {
+      docs.add(leaf.view.containerEl.ownerDocument);
+    });
+    for (const doc of docs) {
+      if (this.watchedDocs.has(doc) || !doc.body) continue;
+      this.observer.observe(doc.body, { childList: true, subtree: true });
+      this.watchedDocs.add(doc);
+    }
+  }
+
   private scan(): void {
-    const root = this.plugin.app.workspace.containerEl;
-    const videos = Array.from(root.querySelectorAll("video"));
+    this.watchDocuments();
+    const videos = this.workspaceVideos();
     const seen = new Set(videos);
     for (const [video, session] of this.sessions) {
       if (seen.has(video) && video.isConnected) continue;
@@ -396,7 +428,7 @@ export class VideoSurfaceManager {
         this.sessions.set(video, session);
         void session.bind();
       } catch (error) {
-        console.error(error);
+        console.error(formatError(error));
       }
     }
   }
@@ -404,6 +436,7 @@ export class VideoSurfaceManager {
   private dispose(): void {
     this.observer?.disconnect();
     this.observer = null;
+    this.watchedDocs.clear();
     const win = this.plugin.app.workspace.containerEl.win;
     win.clearTimeout(this.scanTimer);
     for (const session of this.sessions.values()) session.destroy();

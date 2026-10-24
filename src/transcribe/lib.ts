@@ -9,6 +9,12 @@ import { chunksToCues } from "./audio";
 export const TRANSFORMERS_VERSION = "4.3.1";
 export const ONNXRUNTIME_WEB_VERSION = "1.31.0-dev.20260914-8d85527a0";
 
+type OnnxWasmEnv = {
+  wasmPaths?: { mjs?: string; wasm?: string } | string;
+  proxy?: boolean;
+  numThreads?: number;
+};
+
 type TransformersModule = {
   env: {
     allowRemoteModels: boolean;
@@ -17,7 +23,7 @@ type TransformersModule = {
     useFSCache: boolean;
     useCustomCache: boolean;
     customCache: ReturnType<typeof fileCache> | null;
-    backends: { onnx: { wasm?: { wasmPaths?: { mjs?: string; wasm?: string }; proxy?: boolean; numThreads?: number } } };
+    backends: { onnx: { wasm?: OnnxWasmEnv } };
   };
   pipeline: (
     task: "automatic-speech-recognition",
@@ -25,7 +31,7 @@ type TransformersModule = {
     options?: Record<string, unknown>
   ) => Promise<{
     (
-      audio: { raw: Float32Array; sampling_rate: number },
+      audio: Float32Array,
       options?: Record<string, unknown>
     ): Promise<{ text?: string; chunks?: { text?: string; timestamp?: [number | null, number | null] }[] }>;
     dispose?: () => Promise<void>;
@@ -55,67 +61,126 @@ export async function ensureTranscriberLib(libDir: string): Promise<void> {
       if (!existsFile(dest)) await downloadFile(file.url, dest);
     })
   );
+  patchTransformersWebOnnx(path.join(libDir, "transformers.min.js"));
+}
+
+export function inferenceDevice(): "wasm" {
+  return "wasm";
+}
+
+export const WEB_ONNX_IMPORT = "vs-web-onnx";
+
+export function forceWebOnnxSource(source: string): string {
+  return source.replaceAll('process?.release?.name==="node"', "false");
+}
+
+function patchTransformersWebOnnx(absPath: string): void {
+  const fs = nodeRequire<typeof import("fs")>("fs");
+  if (!existsFile(absPath)) return;
+  const src = fs.readFileSync(absPath, "utf8");
+  const next = forceWebOnnxSource(src);
+  if (next !== src) fs.writeFileSync(absPath, next);
+}
+
+function clearOnnxRuntimeGlobal(): void {
+  const key = Symbol.for("onnxruntime");
+  const g = window as typeof window & Record<symbol, unknown>;
+  if (!(key in g)) return;
+  try {
+    delete g[key];
+  } catch {
+    g[key] = undefined;
+  }
+}
+
+function withBrowserProcessRelease<T>(run: () => Promise<T>): Promise<T> {
+  const proc = (window as unknown as { process?: { release?: { name?: string } } }).process;
+  if (!proc?.release || proc.release.name !== "node") return run();
+  const original = proc.release;
+  try {
+    Object.defineProperty(proc, "release", { configurable: true, enumerable: true, value: { name: "browser" } });
+  } catch {
+    try {
+      proc.release = { name: "browser" };
+    } catch {
+      return run();
+    }
+  }
+  return run().finally(() => {
+    try {
+      Object.defineProperty(proc, "release", { configurable: true, enumerable: true, value: original });
+    } catch {
+      try {
+        proc.release = original;
+      } catch {
+        /* keep the transcriber import from blocking restore */
+      }
+    }
+  });
 }
 
 function importEsm(specifier: string): Promise<TransformersModule> {
-  if (!specifier.startsWith("blob:")) throw new Error("Unexpected transcriber module URL");
+  if (!/^(blob:|file:|app:|https?:)/.test(specifier)) throw new Error("Unexpected transcriber module URL");
   return import(specifier) as Promise<TransformersModule>;
+}
+
+function importTransformers(jsUrl: string): Promise<TransformersModule> {
+  clearOnnxRuntimeGlobal();
+  const hashed = jsUrl.includes("#") ? jsUrl : `${jsUrl}#${WEB_ONNX_IMPORT}`;
+  return withBrowserProcessRelease(() => importEsm(hashed));
+}
+
+function applyWasmPaths(transformers: TransformersModule, paths: { mjs: string; wasm: string }): void {
+  const targets: { wasm?: OnnxWasmEnv }[] = [transformers.env.backends.onnx];
+  const globalOrt = (window as unknown as { ort?: { env?: { wasm?: OnnxWasmEnv } } }).ort?.env;
+  if (globalOrt) targets.push(globalOrt);
+  for (const target of targets) {
+    if (!target.wasm) target.wasm = {};
+    target.wasm.proxy = false;
+    target.wasm.numThreads = 1;
+    target.wasm.wasmPaths = paths;
+  }
 }
 
 export async function transcribePcm(
   pcm: Float32Array,
   accuracy: TranscriberAccuracy,
   libDir: string,
-  modelsDir: string
+  modelsDir: string,
+  toUrl: (absPath: string) => string
 ): Promise<SubtitleCue[]> {
   const path = nodeRequire<typeof import("path")>("path");
-  const fs = nodeRequire<typeof import("fs")>("fs");
   await ensureTranscriberLib(libDir);
-  const blobs: string[] = [];
-  const blobUrl = (file: string, type: string): string => {
-    const url = URL.createObjectURL(new Blob([fs.readFileSync(file)], { type }));
-    blobs.push(url);
-    return url;
+  const jsUrl = toUrl(path.join(libDir, "transformers.min.js"));
+  const wasmPaths = {
+    mjs: toUrl(path.join(libDir, "ort-wasm-simd-threaded.asyncify.mjs")),
+    wasm: toUrl(path.join(libDir, "ort-wasm-simd-threaded.asyncify.wasm"))
   };
+  const transformers = await importTransformers(jsUrl);
+  transformers.env.allowRemoteModels = true;
+  transformers.env.allowLocalModels = false;
+  transformers.env.useBrowserCache = false;
+  transformers.env.useFSCache = false;
+  transformers.env.useCustomCache = true;
+  transformers.env.customCache = fileCache(modelsDir);
+  applyWasmPaths(transformers, wasmPaths);
+  const asr = await transformers.pipeline("automatic-speech-recognition", whisperModelId(accuracy), {
+    dtype: "q8",
+    device: inferenceDevice()
+  });
   try {
-    const transformers = await importEsm(blobUrl(path.join(libDir, "transformers.min.js"), "text/javascript"));
-    transformers.env.allowRemoteModels = true;
-    transformers.env.allowLocalModels = false;
-    transformers.env.useBrowserCache = false;
-    transformers.env.useFSCache = false;
-    transformers.env.useCustomCache = true;
-    transformers.env.customCache = fileCache(modelsDir);
-    const wasm = transformers.env.backends.onnx.wasm ?? {};
-    wasm.proxy = false;
-    wasm.numThreads = 1;
-    wasm.wasmPaths = {
-      mjs: blobUrl(path.join(libDir, "ort-wasm-simd-threaded.asyncify.mjs"), "text/javascript"),
-      wasm: blobUrl(path.join(libDir, "ort-wasm-simd-threaded.asyncify.wasm"), "application/wasm")
-    };
-    transformers.env.backends.onnx.wasm = wasm;
-    const asr = await transformers.pipeline("automatic-speech-recognition", whisperModelId(accuracy), {
-      dtype: "q8",
-      device: "wasm"
+    const result = await asr(new Float32Array(pcm), {
+      return_timestamps: true,
+      chunk_length_s: 30,
+      stride_length_s: 5
     });
-    try {
-      const result = await asr(
-        { raw: pcm, sampling_rate: 16_000 },
-        {
-          return_timestamps: true,
-          chunk_length_s: 30,
-          stride_length_s: 5
-        }
-      );
-      const cues = chunksToCues(result.chunks ?? []);
-      if (cues.length > 0) return cues;
-      const text = (result.text ?? "").replace(/\s+/g, " ").trim();
-      if (!text) throw new Error("The transcriber returned no speech");
-      const duration = pcm.length / 16_000;
-      return [{ start: 0, end: Math.max(0.5, duration), text }];
-    } finally {
-      if (typeof asr.dispose === "function") await asr.dispose();
-    }
+    const cues = chunksToCues(result.chunks ?? []);
+    if (cues.length > 0) return cues;
+    const text = (result.text ?? "").replace(/\s+/g, " ").trim();
+    if (!text) throw new Error("The transcriber returned no speech");
+    const duration = pcm.length / 16_000;
+    return [{ start: 0, end: Math.max(0.5, duration), text }];
   } finally {
-    for (const url of blobs) URL.revokeObjectURL(url);
+    if (typeof asr.dispose === "function") await asr.dispose();
   }
 }

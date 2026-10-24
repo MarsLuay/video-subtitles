@@ -54,6 +54,20 @@ export function vaultFileAbsPath(plugin: Plugin, file: TFile): string {
   return path.join(adapter.getBasePath(), file.path);
 }
 
+export function fileResourceUrl(plugin: Plugin, absPath: string): string {
+  const adapter = plugin.app.vault.adapter;
+  if (adapter instanceof FileSystemAdapter) {
+    const base = adapter.getBasePath().replace(/\\/g, "/");
+    const normalized = absPath.replace(/\\/g, "/");
+    if (normalized.startsWith(base)) {
+      const rel = normalized.slice(base.length).replace(/^\//, "");
+      return adapter.getResourcePath(rel).replace(/[?#].*$/, "");
+    }
+  }
+  const { pathToFileURL } = nodeRequire<typeof import("url")>("url");
+  return pathToFileURL(absPath).href;
+}
+
 export async function transcribeVideoFile(
   plugin: Plugin,
   videoPath: string,
@@ -82,5 +96,5 @@ export async function transcribeVideoFile(
     if (existsFile(wavPath)) fs.unlinkSync(wavPath);
   }
   if (pcm.length === 0) throw new Error("The video has no audio to transcribe");
-  return transcribePcm(pcm, accuracy, dirs.lib, dirs.models);
+  return transcribePcm(pcm, accuracy, dirs.lib, dirs.models, (file) => fileResourceUrl(plugin, file));
 }
