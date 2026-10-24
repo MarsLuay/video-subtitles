@@ -62,7 +62,8 @@ export async function ensureTranscriberLib(libDir: string): Promise<void> {
       if (!existsFile(dest)) await downloadFile(file.url, dest);
     })
   );
-  patchTransformersWebOnnx(path.join(libDir, "transformers.min.js"));
+  patchWebOnnxFile(path.join(libDir, "transformers.min.js"));
+  patchWebOnnxFile(path.join(libDir, "ort-wasm-simd-threaded.asyncify.mjs"));
 }
 
 export function inferenceDevice(): "wasm" {
@@ -72,10 +73,13 @@ export function inferenceDevice(): "wasm" {
 export const WEB_ONNX_IMPORT = "vs-web-onnx";
 
 export function forceWebOnnxSource(source: string): string {
-  return source.replaceAll('process?.release?.name==="node"', "false");
+  return source
+    .replaceAll('process?.release?.name==="node"', "false")
+    .replaceAll('globalThis.process?.versions?.node&&"renderer"!=globalThis.process?.type', "false")
+    .replaceAll("globalThis.process?.versions?.node&&globalThis.process?.type!=\"renderer\"", "false");
 }
 
-function patchTransformersWebOnnx(absPath: string): void {
+function patchWebOnnxFile(absPath: string): void {
   const fs = nodeRequire<typeof import("fs")>("fs");
   if (!existsFile(absPath)) return;
   const src = fs.readFileSync(absPath, "utf8");
@@ -131,13 +135,17 @@ function importTransformers(jsUrl: string): Promise<TransformersModule> {
   return withBrowserProcessRelease(() => importEsm(hashed));
 }
 
-function applyWasmPaths(transformers: TransformersModule, paths: { mjs: string; wasm: string }): void {
+function applyWasmPaths(
+  transformers: TransformersModule,
+  paths: { mjs: string; wasm: string },
+  proxy: boolean
+): void {
   const targets: { wasm?: OnnxWasmEnv }[] = [transformers.env.backends.onnx];
   const globalOrt = (window as unknown as { ort?: { env?: { wasm?: OnnxWasmEnv } } }).ort?.env;
   if (globalOrt) targets.push(globalOrt);
   for (const target of targets) {
     if (!target.wasm) target.wasm = {};
-    target.wasm.proxy = false;
+    target.wasm.proxy = proxy;
     target.wasm.numThreads = 1;
     target.wasm.wasmPaths = paths;
   }
@@ -166,19 +174,24 @@ export async function transcribePcm(
   transformers.env.useFSCache = false;
   transformers.env.useCustomCache = true;
   transformers.env.customCache = fileCache(modelsDir);
-  applyWasmPaths(transformers, wasmPaths);
+  applyWasmPaths(transformers, wasmPaths, true);
   onProgress?.(20);
   const downloads = new Map<string, { loaded: number; total: number }>();
-  const asr = await transformers.pipeline("automatic-speech-recognition", whisperModelId(accuracy), {
-    dtype: "q8",
-    device: inferenceDevice(),
-    progress_callback: (event: ProgressEvent) => {
-      try {
-        onProgress?.(loadStagePercent(mergeFileProgress(downloads, event)));
-      } catch {
-        /* keep loading the model */
+  const openAsr = (): ReturnType<TransformersModule["pipeline"]> =>
+    transformers.pipeline("automatic-speech-recognition", whisperModelId(accuracy), {
+      dtype: "q8",
+      device: inferenceDevice(),
+      progress_callback: (event: ProgressEvent) => {
+        try {
+          onProgress?.(loadStagePercent(mergeFileProgress(downloads, event)));
+        } catch {
+          /* keep loading the model */
+        }
       }
-    }
+    });
+  let asr = await openAsr().catch(async () => {
+    applyWasmPaths(transformers, wasmPaths, false);
+    return openAsr();
   });
   const duration = pcm.length / 16_000;
   const windows = pcmWindows(pcm);
@@ -192,9 +205,16 @@ export async function transcribePcm(
       if (!part) continue;
       onProgress?.(transcribeStagePercent(index, windows.length));
       await yieldToTracker();
-      const result = await asr(new Float32Array(part.samples), {
-        return_timestamps: true
-      });
+      let result: { text?: string; chunks?: { text?: string; timestamp?: [number | null, number | null] }[] };
+      try {
+        result = await asr(new Float32Array(part.samples), { return_timestamps: true });
+      } catch (error) {
+        if (index !== 0) throw error;
+        applyWasmPaths(transformers, wasmPaths, false);
+        if (typeof asr.dispose === "function") await asr.dispose();
+        asr = await openAsr();
+        result = await asr(new Float32Array(part.samples), { return_timestamps: true });
+      }
       const shifted = chunksToCues(result.chunks ?? []).map((cue) => ({
         start: cue.start + part.offsetSec,
         end: cue.end + part.offsetSec,

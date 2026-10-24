@@ -52,11 +52,19 @@ export function loadStagePercent(fraction: number): number {
   return 20 + 35 * Math.min(1, Math.max(0, fraction));
 }
 
-export const TRACKER_YIELD_MS = 50;
+export const TRACKER_YIELD_MS = 250;
 
 export function yieldToTracker(ms = TRACKER_YIELD_MS): Promise<void> {
   return new Promise((resolve) => {
-    window.setTimeout(resolve, ms);
+    window.setTimeout(() => {
+      if (typeof window.requestAnimationFrame !== "function") {
+        resolve();
+        return;
+      }
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => resolve());
+      });
+    }, ms);
   });
 }
 

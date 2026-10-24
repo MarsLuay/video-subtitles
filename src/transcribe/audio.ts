@@ -1,8 +1,8 @@
 import type { SubtitleCue } from "../subtitles/cues";
 
 export const WHISPER_SAMPLE_RATE = 16_000;
-export const WHISPER_CHUNK_SECONDS = 30;
-export const WHISPER_STRIDE_SECONDS = 5;
+export const WHISPER_CHUNK_SECONDS = 12;
+export const WHISPER_STRIDE_SECONDS = 2;
 
 export function mixToMono(buffer: AudioBuffer): Float32Array {
   const length = buffer.length;
