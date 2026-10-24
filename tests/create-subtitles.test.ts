@@ -25,9 +25,11 @@ import {
   loadStagePercent,
   mergeFileProgress,
   monotonicPercent,
+  processedDurationSec,
   remainingTranscribeSeconds,
   startEstimate,
-  transcribeStagePercent
+  transcribeStagePercent,
+  videoProgressPercent
 } from "../src/transcribe/progress";
 import { labelSpeakers, prefixSpeaker } from "../src/transcribe/diarize";
 import { createResumeJob, parseResumeState, resumeMatches } from "../src/transcribe/resume";
@@ -229,10 +231,16 @@ describe("generated track", () => {
 
 describe("create progress", () => {
   it("formats a monotonic percent and tracks model file downloads", () => {
-    expect(formatCreateProgress(12.4)).toBe("Creating subtitles… 12%");
+    expect(formatCreateProgress(12.4)).toBe("Creating subtitles… 12%/100%");
     expect(formatRemaining(45)).toBe("~45s left");
     expect(formatRemaining(180)).toBe("~3 min left");
-    expect(formatCreateProgress(62, 45)).toBe("Creating subtitles… 62% · ~45s left");
+    expect(formatCreateProgress(62, 45)).toBe("Creating subtitles… 62%/100% · ~45s left");
+    expect(formatCreateProgress(100)).toBe("Creating subtitles… 100%/100%");
+    expect(videoProgressPercent(12, 100)).toBe(12);
+    expect(videoProgressPercent(50, 200)).toBe(25);
+    expect(videoProgressPercent(200, 100)).toBe(100);
+    expect(processedDurationSec([{ offsetSec: 0, samples: { length: 16_000 } }], 0)).toBe(0);
+    expect(processedDurationSec([{ offsetSec: 8, samples: { length: 16_000 } }], 1)).toBe(9);
     expect(remainingTranscribeSeconds({ completedWindows: 0, totalWindows: 5, elapsedMs: 10_000 })).toBeNull();
     expect(remainingTranscribeSeconds({ completedWindows: 5, totalWindows: 5, elapsedMs: 10_000 })).toBeNull();
     expect(

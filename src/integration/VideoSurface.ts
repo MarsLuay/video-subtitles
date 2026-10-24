@@ -411,7 +411,7 @@ class VideoSession {
         new Notice("The transcriber returned no speech.");
         return;
       }
-      status.setPercent(98);
+      status.setPercent(100);
       const saved = await this.applyGeneratedCues(cues, true);
       status.hide();
       if (saved) {

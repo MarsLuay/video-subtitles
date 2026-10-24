@@ -103,7 +103,7 @@ export async function transcribeVideoFile(
   fs.mkdirSync(dirs.models, { recursive: true });
   fs.mkdirSync(dirs.bin, { recursive: true });
   fs.mkdirSync(dirs.tmp, { recursive: true });
-  onProgress?.(4);
+  onProgress?.(0);
   let pcm: Float32Array | null = null;
   const size = fs.statSync(videoPath).size;
   if (size > 0 && size <= DECODE_AUDIO_MAX_BYTES) {
@@ -111,7 +111,6 @@ export async function transcribeVideoFile(
     pcm = await decodeVideoAudio(toArrayBuffer(bytes), win);
   }
   if (!pcm) {
-    onProgress?.(8);
     const ffmpeg = await ensureFfmpeg(dirs.bin);
     const wavPath = path.join(dirs.tmp, "audio.wav");
     await extractWav(ffmpeg, videoPath, wavPath);
@@ -119,7 +118,6 @@ export async function transcribeVideoFile(
     if (existsFile(wavPath)) fs.unlinkSync(wavPath);
   }
   if (pcm.length === 0) throw new Error("The video has no audio to transcribe");
-  onProgress?.(15);
   await yieldToTracker();
   const resumeFile = createResumePath(plugin);
   const job = createResumeJob({

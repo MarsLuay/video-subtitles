@@ -5,7 +5,7 @@ export function showCreateProgressNotice(): {
   setPercent: (percent: number, remainingSec?: number | null) => void;
   hide: () => void;
 } {
-  let shown = 1;
+  let shown = 0;
   let remaining: number | null = null;
   const notice = new Notice("", 0);
   const host = notice.messageEl;
@@ -23,6 +23,6 @@ export function showCreateProgressNotice(): {
       /* keep creating */
     }
   };
-  setPercent(1);
+  setPercent(0);
   return { setPercent, hide: () => notice.hide() };
 }

@@ -9,7 +9,7 @@ export type ProgressEvent = {
 
 export function clampPercent(value: number): number {
   if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.min(99, Math.round(value)));
+  return Math.max(0, Math.min(100, Math.round(value)));
 }
 
 export type CreateProgressFn = (percent: number, remainingSec?: number | null) => void;
@@ -23,9 +23,26 @@ export function formatRemaining(remainingSec?: number | null): string {
 
 export function formatCreateProgress(percent: number, remainingSec?: number | null): string {
   const remaining = formatRemaining(remainingSec);
-  return remaining
-    ? `Creating subtitles… ${clampPercent(percent)}% · ${remaining}`
-    : `Creating subtitles… ${clampPercent(percent)}%`;
+  const done = `${clampPercent(percent)}%/100%`;
+  return remaining ? `Creating subtitles… ${done} · ${remaining}` : `Creating subtitles… ${done}`;
+}
+
+export function processedDurationSec(
+  windows: readonly { offsetSec: number; samples: { length: number } }[],
+  completedWindows: number,
+  sampleRate = 16_000
+): number {
+  if (completedWindows <= 0 || windows.length === 0) return 0;
+  const part = windows[Math.min(completedWindows, windows.length) - 1];
+  if (!part) return 0;
+  return part.offsetSec + part.samples.length / sampleRate;
+}
+
+export function videoProgressPercent(processedSec: number, durationSec: number): number {
+  if (!(durationSec > 0)) return 0;
+  const ratio = processedSec / durationSec;
+  if (!Number.isFinite(ratio) || ratio <= 0) return 0;
+  return Math.max(0, Math.min(100, (processedSec / durationSec) * 100));
 }
 
 export function remainingTranscribeSeconds(input: {
