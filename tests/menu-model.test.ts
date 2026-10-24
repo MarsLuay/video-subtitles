@@ -5,9 +5,11 @@ import { isOverflowButtonHit, measureOverflowHit, overflowControlsVisible } from
 describe("player overflow 3-dot", () => {
   it("hits the native overflow button at the bottom-right of the control bar", () => {
     const bounds = { width: 640, height: 360, left: 10, top: 20 };
-    expect(isOverflowButtonHit(bounds, 640, 370)).toBe(true);
-    expect(isOverflowButtonHit(bounds, 645, 378)).toBe(true);
-    expect(isOverflowButtonHit(bounds, 500, 370)).toBe(false);
+    // 48×48, right 0, bottom 24 → video-local [592,288]–[640,336], client [602,308]–[650,356]
+    expect(isOverflowButtonHit(bounds, 630, 330)).toBe(true);
+    expect(isOverflowButtonHit(bounds, 649, 355)).toBe(true);
+    expect(isOverflowButtonHit(bounds, 640, 370)).toBe(false);
+    expect(isOverflowButtonHit(bounds, 500, 330)).toBe(false);
     expect(isOverflowButtonHit(bounds, 640, 200)).toBe(false);
   });
 
@@ -54,8 +56,34 @@ describe("player overflow 3-dot", () => {
       width: 48,
       height: 48,
       right: 0,
-      bottom: 0
+      bottom: 24
     });
+  });
+
+  it("ignores overflow-button styles that copy the video host box", () => {
+    const video = document.createElement("video");
+    Object.defineProperty(video, "clientWidth", { configurable: true, value: 960 });
+    Object.defineProperty(video, "clientHeight", { configurable: true, value: 540 });
+    const original = window.getComputedStyle.bind(window);
+    window.getComputedStyle = ((el: Element, pseudo?: string | null) => {
+      if (
+        pseudo === "::-webkit-media-controls-overflow-button" ||
+        pseudo === "::-internal-media-controls-overflow-button"
+      ) {
+        return { width: "960px", height: "540px", marginRight: "0px", marginBottom: "0px", right: "auto", bottom: "auto" } as CSSStyleDeclaration;
+      }
+      return original(el, pseudo);
+    }) as typeof window.getComputedStyle;
+    try {
+      expect(measureOverflowHit(video)).toEqual({
+        width: 48,
+        height: 48,
+        right: 0,
+        bottom: 24
+      });
+    } finally {
+      window.getComputedStyle = original;
+    }
   });
 });
 

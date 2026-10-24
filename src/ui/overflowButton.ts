@@ -1,5 +1,10 @@
-/** Chromium overflow button default. Closed shadow; used if the public pseudo has no size. */
+/** Chromium overflow button. Closed shadow; public ::-webkit-media-controls-overflow-button copies the video box. */
 export const FALLBACK_OVERFLOW_BUTTON = 48;
+
+/**
+ * Gap under the overlay overflow button (timeline row). CDP at 960×540 and 640×360: always 24px.
+ */
+export const OVERFLOW_BUTTON_BOTTOM_INSET = 24;
 
 /** Paint the overflow hit target. Testing only. */
 export const DEBUG_SHOW_OVERFLOW_HIT = true;
@@ -24,51 +29,52 @@ export function isOverflowButtonHit(
   bounds: { width: number; height: number; left: number; top: number },
   clientX: number,
   clientY: number,
-  size: Pick<OverflowHitBox, "width" | "height"> = {
+  size: OverflowHitBox = {
     width: FALLBACK_OVERFLOW_BUTTON,
-    height: FALLBACK_OVERFLOW_BUTTON
+    height: FALLBACK_OVERFLOW_BUTTON,
+    right: 0,
+    bottom: OVERFLOW_BUTTON_BOTTOM_INSET
   }
 ): boolean {
   const x = clientX - bounds.left;
   const y = clientY - bounds.top;
-  return (
-    x >= bounds.width - size.width &&
-    x <= bounds.width &&
-    y >= bounds.height - size.height &&
-    y <= bounds.height
-  );
+  const left = bounds.width - size.width - size.right;
+  const right = bounds.width - size.right;
+  const top = bounds.height - size.height - size.bottom;
+  const bottom = bounds.height - size.bottom;
+  return x >= left && x <= right && y >= top && y <= bottom;
 }
 
 export function measureOverflowHit(video: HTMLVideoElement): OverflowHitBox {
+  const fallback: OverflowHitBox = {
+    width: FALLBACK_OVERFLOW_BUTTON,
+    height: FALLBACK_OVERFLOW_BUTTON,
+    right: 0,
+    bottom: OVERFLOW_BUTTON_BOTTOM_INSET
+  };
   const win = viewOf(video);
-  if (!win) {
-    return {
-      width: FALLBACK_OVERFLOW_BUTTON,
-      height: FALLBACK_OVERFLOW_BUTTON,
-      right: 0,
-      bottom: 0
-    };
-  }
+  if (!win) return fallback;
 
   const overflow = firstOverflowStyle(win, video);
+  if (!overflow) return fallback;
+
   const enclosure = win.getComputedStyle(video, "::-webkit-media-controls-enclosure");
   const panel = win.getComputedStyle(video, "::-webkit-media-controls-panel");
-  const width =
-    px(overflow?.width) || FALLBACK_OVERFLOW_BUTTON;
-  const height =
-    px(overflow?.height) || FALLBACK_OVERFLOW_BUTTON;
-  const right =
-    px(overflow?.marginRight) ||
-    px(overflow?.right) ||
-    px(enclosure.paddingRight) ||
-    px(panel.paddingRight);
-  const bottom =
-    px(overflow?.marginBottom) ||
-    px(overflow?.bottom) ||
-    px(enclosure.paddingBottom) ||
-    px(panel.paddingBottom);
-
-  return { width, height, right, bottom };
+  return {
+    width: px(overflow.width) || fallback.width,
+    height: px(overflow.height) || fallback.height,
+    right:
+      px(overflow.marginRight) ||
+      px(overflow.right) ||
+      px(enclosure.paddingRight) ||
+      px(panel.paddingRight),
+    bottom:
+      px(overflow.marginBottom) ||
+      px(overflow.bottom) ||
+      px(enclosure.paddingBottom) ||
+      px(panel.paddingBottom) ||
+      fallback.bottom
+  };
 }
 
 function viewOf(video: HTMLVideoElement): Window | null {
@@ -79,9 +85,20 @@ function viewOf(video: HTMLVideoElement): Window | null {
 function firstOverflowStyle(win: Window, video: HTMLVideoElement): CSSStyleDeclaration | null {
   for (const pseudo of OVERFLOW_PSEUDOS) {
     const style = win.getComputedStyle(video, pseudo);
-    if (px(style.width) > 0 && px(style.height) > 0) return style;
+    const width = px(style.width);
+    const height = px(style.height);
+    if (width > 0 && height > 0 && !isHostSized(video, width, height)) return style;
   }
   return null;
+}
+
+/** Closed-shadow overflow-button computed style is the video box, not the 48px control. */
+function isHostSized(video: HTMLVideoElement, width: number, height: number): boolean {
+  const host = video.getBoundingClientRect();
+  const hostWidth = video.clientWidth || host.width;
+  const hostHeight = video.clientHeight || host.height;
+  if (hostWidth <= 0 || hostHeight <= 0) return false;
+  return width >= hostWidth - 1 && height >= hostHeight - 1;
 }
 
 function px(value: string | undefined): number {

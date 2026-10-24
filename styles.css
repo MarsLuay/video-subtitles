@@ -23,7 +23,7 @@
 .video-subtitles-overflow-hit {
   position: absolute;
   right: var(--video-subtitles-hit-right, 0px);
-  bottom: var(--video-subtitles-hit-bottom, 0px);
+  bottom: var(--video-subtitles-hit-bottom, 24px);
   z-index: 7;
   width: var(--video-subtitles-hit-width, 48px);
   height: var(--video-subtitles-hit-height, 48px);
