@@ -2,7 +2,6 @@ import { Notice, TFile, type App, type Plugin } from "obsidian";
 import { resolveVideoFile } from "./resolveVideoFile";
 import { renderCueOverlay } from "../ui/captionOverlay";
 import { openOverflowMenu } from "../ui/overflowMenu";
-import { isOverflowButtonHit, overflowControlsVisible } from "../ui/overflowButton";
 import { pickSubtitleFile } from "../ui/pickSubtitleFile";
 import { parseSubtitle } from "../subtitles/parseSubtitle";
 import { labelFromFilename } from "../subtitles/cues";
@@ -19,8 +18,9 @@ import { toArrayBuffer } from "../subtitles/absorb/bytes";
 class VideoSession {
   private store: AbsorbedStore = emptyStore();
   private file: TFile | null = null;
-  private hovering = false;
-  private readonly host: HTMLElement;
+  private idleTimer = 0;
+  private readonly player: HTMLElement;
+  private readonly hitEl: HTMLElement;
   private readonly cuesEl: HTMLElement;
   private readonly onTime = (): void => this.paintCues();
   private persistQueue: Promise<void> = Promise.resolve();
@@ -31,17 +31,28 @@ class VideoSession {
   ) {
     const parent = video.parentElement;
     if (!parent) throw new Error("video has no host");
-    this.host = parent;
-    this.host.addClass("video-subtitles-host");
-    this.cuesEl = this.host.createDiv({ cls: "video-subtitles-cues is-empty" });
+    this.player = parent.createDiv({ cls: "video-subtitles-player" });
+    parent.insertBefore(this.player, video);
+    this.player.appendChild(video);
+    this.cuesEl = this.player.createDiv({ cls: "video-subtitles-cues is-empty" });
+    this.hitEl = this.player.createEl("button", {
+      cls: "video-subtitles-overflow-hit",
+      attr: {
+        type: "button",
+        "aria-label": "More options"
+      }
+    });
     this.video.addEventListener("timeupdate", this.onTime);
     this.video.addEventListener("seeked", this.onTime);
     this.video.addEventListener("loadedmetadata", this.onTime);
-    this.video.addEventListener("mouseenter", this.onMouseEnter);
-    this.video.addEventListener("mouseleave", this.onMouseLeave);
-    this.video.addEventListener("pointerdown", this.onOverflowPointer, true);
-    this.video.addEventListener("mousedown", this.onOverflowPointer, true);
-    this.video.addEventListener("click", this.onOverflowPointer, true);
+    this.video.addEventListener("play", this.armHit);
+    this.video.addEventListener("pause", this.armHit);
+    this.player.addEventListener("mousemove", this.armHit);
+    this.player.addEventListener("mouseleave", this.onPlayerLeave);
+    this.hitEl.addEventListener("pointerdown", this.onHitPointer);
+    this.hitEl.addEventListener("mousedown", this.onHitPointer);
+    this.hitEl.addEventListener("click", this.onHitClick);
+    this.armHit();
   }
 
   async bind(): Promise<void> {
@@ -60,33 +71,45 @@ class VideoSession {
   }
 
   destroy(): void {
+    this.player.win.clearTimeout(this.idleTimer);
     this.video.removeEventListener("timeupdate", this.onTime);
     this.video.removeEventListener("seeked", this.onTime);
     this.video.removeEventListener("loadedmetadata", this.onTime);
-    this.video.removeEventListener("mouseenter", this.onMouseEnter);
-    this.video.removeEventListener("mouseleave", this.onMouseLeave);
-    this.video.removeEventListener("pointerdown", this.onOverflowPointer, true);
-    this.video.removeEventListener("mousedown", this.onOverflowPointer, true);
-    this.video.removeEventListener("click", this.onOverflowPointer, true);
+    this.video.removeEventListener("play", this.armHit);
+    this.video.removeEventListener("pause", this.armHit);
+    this.player.removeEventListener("mousemove", this.armHit);
+    this.player.removeEventListener("mouseleave", this.onPlayerLeave);
+    this.hitEl.removeEventListener("pointerdown", this.onHitPointer);
+    this.hitEl.removeEventListener("mousedown", this.onHitPointer);
+    this.hitEl.removeEventListener("click", this.onHitClick);
+    this.hitEl.detach();
     this.cuesEl.detach();
-    this.host.removeClass("video-subtitles-host");
+    const parent = this.player.parentElement;
+    if (parent) parent.insertBefore(this.video, this.player);
+    this.player.detach();
   }
 
-  private readonly onMouseEnter = (): void => {
-    this.hovering = true;
+  private readonly armHit = (): void => {
+    this.hitEl.removeClass("is-idle");
+    const win = this.player.win;
+    win.clearTimeout(this.idleTimer);
+    if (!this.video.paused) {
+      this.idleTimer = win.setTimeout(() => this.hitEl.addClass("is-idle"), 2500);
+    }
   };
 
-  private readonly onMouseLeave = (): void => {
-    this.hovering = false;
+  private readonly onPlayerLeave = (): void => {
+    if (!this.video.paused) this.hitEl.addClass("is-idle");
   };
 
-  private readonly onOverflowPointer = (event: Event): void => {
-    if (!(event instanceof MouseEvent) || event.button !== 0) return;
-    if (!overflowControlsVisible(this.video.paused, this.hovering)) return;
-    if (!isOverflowButtonHit(this.video.getBoundingClientRect(), event.clientX, event.clientY)) return;
+  private readonly onHitPointer = (event: Event): void => {
+    event.stopPropagation();
+  };
+
+  private readonly onHitClick = (event: MouseEvent): void => {
     event.preventDefault();
-    event.stopImmediatePropagation();
-    if (event.type === "click") this.openMenu(event);
+    event.stopPropagation();
+    this.openMenu(event);
   };
 
   private openMenu(event: MouseEvent): void {

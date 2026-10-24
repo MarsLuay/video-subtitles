@@ -2,17 +2,38 @@
   display: none;
 }
 
-.video-subtitles-host {
+.video-subtitles-player {
   position: relative;
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0;
 }
 
-.video-subtitles-host > video {
+.video-subtitles-player > video {
   display: block;
   max-width: 100%;
 }
 
-/* Keep the native 3-dot. Disable its closed-shadow list so this plugin can fill it. */
-.video-subtitles-host video::-webkit-media-controls-overflow-button {
+/* Author CSS cannot add rows to Chromium's closed overflow list. Cover that 3-dot. */
+.video-subtitles-player video::-webkit-media-controls-overflow-button,
+.video-subtitles-player video::-internal-media-controls-overflow-button {
+  pointer-events: none;
+}
+
+.video-subtitles-overflow-hit {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 7;
+  width: 48px;
+  height: 52px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.video-subtitles-overflow-hit.is-idle {
   pointer-events: none;
 }
 
@@ -43,6 +64,11 @@
 }
 
 @media (max-width: 768px) {
+  .video-subtitles-overflow-hit {
+    width: 52px;
+    height: 56px;
+  }
+
   .video-subtitles-cues {
     bottom: 64px;
   }

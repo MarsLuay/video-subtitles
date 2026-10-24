@@ -1,6 +1,6 @@
 /** Chromium overflow button sits at the trailing end of the control bar. */
-export const OVERFLOW_BUTTON_WIDTH = 40;
-export const OVERFLOW_BAR_HEIGHT = 48;
+export const OVERFLOW_BUTTON_WIDTH = 48;
+export const OVERFLOW_BAR_HEIGHT = 52;
 
 export function overflowControlsVisible(paused: boolean, hovering: boolean): boolean {
   return paused || hovering;

@@ -6,7 +6,7 @@ describe("player overflow 3-dot", () => {
   it("hits the native overflow button at the bottom-right of the control bar", () => {
     const bounds = { width: 640, height: 360, left: 10, top: 20 };
     expect(isOverflowButtonHit(bounds, 640, 370)).toBe(true);
-    expect(isOverflowButtonHit(bounds, 645, 375)).toBe(true);
+    expect(isOverflowButtonHit(bounds, 645, 378)).toBe(true);
     expect(isOverflowButtonHit(bounds, 500, 370)).toBe(false);
     expect(isOverflowButtonHit(bounds, 640, 200)).toBe(false);
   });

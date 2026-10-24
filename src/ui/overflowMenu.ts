@@ -25,13 +25,13 @@ export function openOverflowMenu(options: {
     }
     if (row.kind === "download") {
       menu.addItem((item) => {
-        item.setTitle("Download").onClick(() => options.onDownload());
+        item.setTitle("Download").setIcon("lucide-download").onClick(() => options.onDownload());
       });
       continue;
     }
     if (row.kind === "playback-speed") {
       menu.addItem((item) => {
-        item.setTitle("Playback speed");
+        item.setTitle("Playback speed").setIcon("lucide-gauge");
         const submenu = (
           item as { setSubmenu?: () => Menu }
         ).setSubmenu?.();
@@ -49,7 +49,7 @@ export function openOverflowMenu(options: {
     }
     if (row.kind === "pip") {
       menu.addItem((item) => {
-        item.setTitle("Picture in picture").onClick(() => options.onPip());
+        item.setTitle("Picture in picture").setIcon("lucide-picture-in-picture-2").onClick(() => options.onPip());
       });
       continue;
     }
