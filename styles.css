@@ -1,0 +1,77 @@
+.video-subtitles-file-input {
+  display: none;
+}
+
+.video-subtitles-host {
+  position: relative;
+}
+
+.video-subtitles-host > video {
+  display: block;
+  max-width: 100%;
+}
+
+.video-subtitles-host video::-webkit-media-controls-overflow-button {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.video-subtitles-more {
+  position: absolute;
+  right: 2px;
+  bottom: 4px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  filter: drop-shadow(0 0 2px #000);
+}
+
+.video-subtitles-more:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.video-subtitles-cues {
+  position: absolute;
+  right: 8%;
+  bottom: 56px;
+  left: 8%;
+  z-index: 5;
+  color: #fff;
+  font-size: clamp(14px, 2.4vw, 22px);
+  line-height: 1.35;
+  text-align: center;
+  pointer-events: none;
+}
+
+.video-subtitles-cues.is-empty {
+  display: none;
+}
+
+.video-subtitles-cue-line {
+  display: inline-block;
+  margin: 0 auto;
+  padding: 0.12em 0.45em;
+  background: rgba(0, 0, 0, 0.72);
+  border-radius: 3px;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 768px) {
+  .video-subtitles-more {
+    width: 44px;
+    height: 44px;
+  }
+
+  .video-subtitles-cues {
+    bottom: 64px;
+  }
+}

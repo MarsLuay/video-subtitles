@@ -1,0 +1,9 @@
+node_modules/
+main.js
+main.js.map
+.DS_Store
+*.log
+coverage/
+.code-analysis/
+.serena/
+.agent-state/
