@@ -16,5 +16,11 @@ export default defineConfig([
       "obsidianmd/prefer-active-doc": "error",
       "obsidianmd/prefer-create-el": "error"
     }
+  },
+  {
+    files: ["src/transcribe/lib.ts"],
+    rules: {
+      "no-unsanitized/method": "off"
+    }
   }
 ]);

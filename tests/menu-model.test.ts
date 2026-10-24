@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { buildSubtitleMenuRows, playbackSpeedLabel } from "../src/ui/menuModel";
-import { isOverflowButtonHit, measureOverflowHit, overflowControlsVisible } from "../src/ui/overflowButton";
+import { DEBUG_SHOW_OVERFLOW_HIT, isOverflowButtonHit, measureOverflowHit, overflowControlsVisible } from "../src/ui/overflowButton";
 
 describe("player overflow 3-dot", () => {
+  it("keeps the overflow hit box invisible", () => {
+    expect(DEBUG_SHOW_OVERFLOW_HIT).toBe(false);
+  });
+
   it("hits the native overflow button at the bottom-right of the control bar", () => {
     const bounds = { width: 640, height: 360, left: 10, top: 20 };
     // 48×48, right 0, bottom 24 → video-local [592,288]–[640,336], client [602,308]–[650,356]
@@ -103,17 +107,17 @@ describe("buildSubtitleMenuRows", () => {
     expect(playbackSpeedLabel(1.5)).toBe("1.5×");
   });
 
-  it("shows Off and Import when no tracks are loaded", () => {
+  it("shows Off, Create, and Import when no tracks are loaded", () => {
     const rows = buildSubtitleMenuRows({
       tracks: [],
       activeTrackId: null
     });
     expect(rows.find((row) => row.kind === "off")).toEqual({ kind: "off", checked: true });
-    expect(rows.some((row) => row.kind === "import")).toBe(true);
+    expect(rows.map((row) => row.kind).slice(-2)).toEqual(["create", "import"]);
     expect(rows.filter((row) => row.kind === "track")).toHaveLength(0);
   });
 
-  it("lists an imported track after Off and before Import", () => {
+  it("lists an imported track after Off and before Create and Import", () => {
     const rows = buildSubtitleMenuRows({
       tracks: [{ id: "sub-1", label: "lecture" }],
       activeTrackId: "sub-1"
@@ -125,6 +129,7 @@ describe("buildSubtitleMenuRows", () => {
       "separator",
       "off",
       "track",
+      "create",
       "import"
     ]);
     expect(rows[4]).toEqual({ kind: "off", checked: false });

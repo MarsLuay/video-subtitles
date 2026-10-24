@@ -1,9 +1,9 @@
 {
 	"id": "video-subtitles",
 	"name": "Video Subtitles",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"minAppVersion": "1.8.9",
-	"description": "Import subtitles from the video more-options menu and store the track inside the video file.",
+	"description": "Create or import subtitles from the video more-options menu and store the track inside the video file.",
 	"author": "Mars",
 	"authorUrl": "https://github.com/MarsLuay",
 	"isDesktopOnly": false

@@ -12,6 +12,10 @@ _Avoid_: pane header more-options, fake overlay icon, kebab
 The menu row that hides captions without deleting the stored track.
 _Avoid_: disable, none, hide
 
+**Create**:
+The menu action above Import that transcribes the open video and upserts an embedded track named `generated`.
+_Avoid_: generate captions, transcribe menu, AI subtitles
+
 **Import**:
 The menu action that picks an SRT or VTT file and adds it as a track.
 _Avoid_: open, attach sidecar, load captions
@@ -22,4 +26,4 @@ _Avoid_: language, CC, text track API
 
 **Absorb**:
 Writing the track into the video file itself so a later open restores the menu without a sidecar.
-_Avoid_: mux, burn-in, ffmpeg, sidecar
+_Avoid_: mux, burn-in, sidecar. Create may download a managed ffmpeg binary to extract audio; it does not mux captions.

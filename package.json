@@ -1,7 +1,7 @@
 {
   "name": "video-subtitles",
-  "version": "0.1.0",
-  "description": "Import subtitles from the video more-options menu and store the track inside the video file.",
+  "version": "0.2.0",
+  "description": "Create or import subtitles from the video more-options menu and store the track inside the video file.",
   "main": "main.js",
   "type": "module",
   "scripts": {

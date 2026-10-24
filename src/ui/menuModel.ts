@@ -7,6 +7,7 @@ export type OverflowMenuRow =
   | { kind: "separator" }
   | { kind: "off"; checked: boolean }
   | { kind: "track"; id: string; label: string; checked: boolean }
+  | { kind: "create" }
   | { kind: "import" };
 
 export function buildSubtitleMenuRows(state: {
@@ -28,6 +29,7 @@ export function buildSubtitleMenuRows(state: {
       checked: state.activeTrackId === track.id
     });
   }
+  rows.push({ kind: "create" });
   rows.push({ kind: "import" });
   return rows;
 }

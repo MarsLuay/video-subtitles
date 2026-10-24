@@ -1,4 +1,9 @@
-import { Notice, TFile, type App, type Plugin } from "obsidian";
+import { Notice, Platform, TFile, type Plugin } from "obsidian";
+import { upsertGeneratedTrack } from "../subtitles/generatedTrack";
+import { cleanupTranscriber, transcriberRoot, transcribeVideoFile, vaultFileAbsPath } from "../transcribe/runtime";
+import { pickAccuracyForHardware } from "../transcribe/hardware";
+import { readHardware } from "../transcribe/node";
+import type { VideoSubtitleSettings } from "../settings";
 import { resolveVideoFile } from "./resolveVideoFile";
 import { renderCueOverlay } from "../ui/captionOverlay";
 import { openOverflowMenu } from "../ui/overflowMenu";
@@ -16,10 +21,16 @@ import {
 } from "../subtitles/store";
 import { toArrayBuffer } from "../subtitles/absorb/bytes";
 
+type VideoSubtitlesHost = Plugin & {
+  subtitleSettings: VideoSubtitleSettings;
+  saveSettings: () => Promise<void>;
+};
+
 class VideoSession {
   private store: AbsorbedStore = emptyStore();
   private file: TFile | null = null;
   private idleTimer = 0;
+  private creating = false;
   private resizeObserver: ResizeObserver | null = null;
   private readonly player: HTMLElement;
   private readonly hitEl: HTMLElement;
@@ -28,7 +39,7 @@ class VideoSession {
   private persistQueue: Promise<void> = Promise.resolve();
 
   constructor(
-    private readonly app: App,
+    private readonly plugin: VideoSubtitlesHost,
     private readonly video: HTMLVideoElement
   ) {
     const parent = video.parentElement;
@@ -62,13 +73,13 @@ class VideoSession {
   }
 
   async bind(): Promise<void> {
-    this.file = resolveVideoFile(this.app, this.video);
+    this.file = resolveVideoFile(this.plugin.app, this.video);
     if (!this.file) {
       this.paintCues();
       return;
     }
     try {
-      const bytes = new Uint8Array(await this.app.vault.readBinary(this.file));
+      const bytes = new Uint8Array(await this.plugin.app.vault.readBinary(this.file));
       this.store = loadStoreFromVideo(bytes);
     } catch {
       this.store = emptyStore();
@@ -165,6 +176,9 @@ class VideoSession {
         this.paintCues();
         void this.persist();
       },
+      onCreate: () => {
+        void this.createTrack();
+      },
       onImport: () => {
         void this.importTrack();
       }
@@ -172,14 +186,14 @@ class VideoSession {
   }
 
   private async downloadVideo(): Promise<void> {
-    this.file = resolveVideoFile(this.app, this.video) ?? this.file;
+    this.file = resolveVideoFile(this.plugin.app, this.video) ?? this.file;
     if (!(this.file instanceof TFile)) {
       new Notice("Open the video file to download it.");
       return;
     }
     const file = this.file;
     try {
-      const data = await this.app.vault.readBinary(file);
+      const data = await this.plugin.app.vault.readBinary(file);
       const url = URL.createObjectURL(new Blob([data]));
       const link = this.video.ownerDocument.body.createEl("a", {
         attr: { href: url, download: file.name }
@@ -219,6 +233,73 @@ class VideoSession {
     }
   }
 
+  private async createTrack(): Promise<void> {
+    if (!Platform.isDesktopApp) {
+      new Notice("Creating subtitles needs desktop Obsidian.");
+      return;
+    }
+    if (this.creating) {
+      new Notice("Already creating subtitles for this video.");
+      return;
+    }
+    this.file = resolveVideoFile(this.plugin.app, this.video) ?? this.file;
+    if (!(this.file instanceof TFile)) {
+      new Notice("Open the video file to create subtitles.");
+      return;
+    }
+    const file = this.file;
+    if (!this.plugin.subtitleSettings.accuracyInitialized) {
+      try {
+        this.plugin.subtitleSettings.transcriberAccuracy = pickAccuracyForHardware(readHardware());
+        this.plugin.subtitleSettings.accuracyInitialized = true;
+        await this.plugin.saveSettings();
+      } catch (error) {
+        console.error(error);
+      }
+    }
+    const keep = this.plugin.subtitleSettings.keepTranscriber;
+    const win = this.video.ownerDocument.defaultView;
+    if (!win) {
+      new Notice("Could not create subtitles.");
+      return;
+    }
+    this.creating = true;
+    const status = new Notice("Creating subtitles…", 0);
+    let root = "";
+    try {
+      root = transcriberRoot(this.plugin);
+      const cues = await transcribeVideoFile(
+        this.plugin,
+        vaultFileAbsPath(this.plugin, file),
+        this.plugin.subtitleSettings.transcriberAccuracy,
+        win
+      );
+      if (cues.length === 0) {
+        status.hide();
+        new Notice("The transcriber returned no speech.");
+        return;
+      }
+      this.store = upsertGeneratedTrack(this.store, cues);
+      this.paintCues();
+      const saved = await this.persist();
+      status.hide();
+      if (saved) new Notice("Added generated subtitles to the video.");
+    } catch (error) {
+      console.error(error);
+      status.hide();
+      new Notice(error instanceof Error ? error.message : "Could not create subtitles.");
+    } finally {
+      this.creating = false;
+      if (root) {
+        try {
+          cleanupTranscriber(root, keep);
+        } catch (error) {
+          console.error(error);
+        }
+      }
+    }
+  }
+
   private activeTrack(): SubtitleTrack | null {
     const id = this.store.activeTrackId;
     return this.store.tracks.find((track) => track.id === id) ?? null;
@@ -236,21 +317,21 @@ class VideoSession {
   }
 
   private async writeStore(): Promise<boolean> {
-    this.file = resolveVideoFile(this.app, this.video) ?? this.file;
+    this.file = resolveVideoFile(this.plugin.app, this.video) ?? this.file;
     if (!(this.file instanceof TFile)) {
       new Notice("Imported for this session. Open the video file to store subtitles inside it.");
       return false;
     }
     const file = this.file;
-    const original = new Uint8Array(await this.app.vault.readBinary(file));
+      const original = new Uint8Array(await this.plugin.app.vault.readBinary(file));
     try {
       const next = saveStoreToVideo(original, this.store);
-      await this.app.vault.modifyBinary(file, toArrayBuffer(next));
+      await this.plugin.app.vault.modifyBinary(file, toArrayBuffer(next));
       this.reloadSrc(file);
       return true;
     } catch (error) {
       try {
-        await this.app.vault.modifyBinary(file, toArrayBuffer(original));
+        await this.plugin.app.vault.modifyBinary(file, toArrayBuffer(original));
       } catch {
         // Keep going; playback still has the in-memory track.
       }
@@ -272,7 +353,7 @@ class VideoSession {
       this.paintCues();
     };
     this.video.addEventListener("loadedmetadata", resume);
-    this.video.src = this.app.vault.getResourcePath(file);
+    this.video.src = this.plugin.app.vault.getResourcePath(file);
   }
 }
 
@@ -281,7 +362,7 @@ export class VideoSurfaceManager {
   private observer: MutationObserver | null = null;
   private scanTimer = 0;
 
-  constructor(private readonly plugin: Plugin) {}
+  constructor(private readonly plugin: VideoSubtitlesHost) {}
 
   start(): void {
     const workspace = this.plugin.app.workspace;
@@ -311,7 +392,7 @@ export class VideoSurfaceManager {
     for (const video of videos) {
       if (this.sessions.has(video) || !video.isConnected || !video.parentElement) continue;
       try {
-        const session = new VideoSession(this.plugin.app, video);
+        const session = new VideoSession(this.plugin, video);
         this.sessions.set(video, session);
         void session.bind();
       } catch (error) {

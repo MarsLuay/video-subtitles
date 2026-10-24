@@ -1,4 +1,5 @@
 node_modules/
+transcriber/
 main.js
 main.js.map
 .DS_Store

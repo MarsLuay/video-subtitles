@@ -1,21 +1,79 @@
 export class Plugin {
   app: { workspace: { containerEl: HTMLElement }; vault: Record<string, unknown> };
-  manifest: { id: string; version: string };
+  manifest: { id: string; version: string; dir?: string };
   constructor() {
     this.app = {
       workspace: { containerEl: document.createElement("div") },
       vault: {}
     };
-    this.manifest = { id: "video-subtitles", version: "0.1.0" };
+    this.manifest = { id: "video-subtitles", version: "0.2.0", dir: ".obsidian/plugins/video-subtitles" };
   }
   addCommand(): void {}
+  addSettingTab(): void {}
+  async loadData(): Promise<unknown> {
+    return {};
+  }
+  async saveData(_data: unknown): Promise<void> {}
   register(): void {}
   registerEvent(): void {}
   registerDomEvent(): void {}
 }
 
 export class Notice {
-  constructor(_message: string) {}
+  constructor(_message: string, _timeout?: number) {}
+  hide(): void {}
+}
+
+export const Platform = {
+  isDesktopApp: true
+};
+
+export class FileSystemAdapter {
+  getBasePath(): string {
+    return "/vault";
+  }
+}
+
+export class PluginSettingTab {
+  app: Plugin["app"];
+  plugin: Plugin;
+  containerEl: HTMLElement;
+  constructor(app: Plugin["app"], plugin: Plugin) {
+    this.app = app;
+    this.plugin = plugin;
+    this.containerEl = document.createElement("div");
+  }
+}
+
+export class Setting {
+  constructor(_containerEl: HTMLElement) {}
+  setName(_name: string): this {
+    return this;
+  }
+  setDesc(_desc: string): this {
+    return this;
+  }
+  addToggle(cb: (toggle: { setValue: (value: boolean) => typeof toggle; onChange: (cb: (value: boolean) => unknown) => typeof toggle }) => void): this {
+    const toggle = {
+      setValue: (_value: boolean) => toggle,
+      onChange: (_cb: (value: boolean) => unknown) => toggle
+    };
+    cb(toggle);
+    return this;
+  }
+  addDropdown(cb: (dropdown: {
+    addOption: (value: string, label: string) => typeof dropdown;
+    setValue: (value: string) => typeof dropdown;
+    onChange: (cb: (value: string) => unknown) => typeof dropdown;
+  }) => void): this {
+    const dropdown = {
+      addOption: (_value: string, _label: string) => dropdown,
+      setValue: (_value: string) => dropdown,
+      onChange: (_cb: (value: string) => unknown) => dropdown
+    };
+    cb(dropdown);
+    return this;
+  }
 }
 
 export class Menu {

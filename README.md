@@ -6,12 +6,14 @@ Obsidian plugin. While a vault video is playing, the player **more options** con
 
 1. Open a video in Obsidian.
 2. Click the player **more options** 3-dot (same menu as Download, Playback speed, Picture in picture).
-3. Choose **Off** or **Import**.
-4. Import an `.srt` or `.vtt` file.
-5. Open **more options** again: the imported name is listed. Select it to show captions on the video.
+3. Choose **Off**, **Create**, or **Import**.
+4. **Create** transcribes the open video on desktop and stores an embedded **generated** track. **Import** picks an `.srt` or `.vtt` file.
+5. Open **more options** again: the track name is listed. Select it to show captions on the video.
 6. The plugin writes that track into the video file. Reopening the video restores the menu without a sidecar.
 
 **Off** hides captions. It does not delete the stored track.
+
+**Settings → Video Subtitles** keeps the downloaded transcriber by default so Create does not fetch it every time, and lets you change Whisper accuracy. The first desktop start picks an accuracy from this computer.
 
 ## Setup
 
@@ -32,7 +34,7 @@ Enable **Video Subtitles** in **Settings → Community plugins**, then reload Ob
 
 - Works with Obsidian video files: `mp4`, `webm`, `ogv`, `mov`, `mkv`.
 - Captions overlay in Obsidian. Other apps will not show this stored track.
-- No network. No ffmpeg.
+- **Create** downloads a local transcriber (Whisper + optional ffmpeg) into the plugin folder, then deletes it after use unless **Keep transcriber** is on.
 - Disable the plugin to return to the native player.
 
 ## License

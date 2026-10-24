@@ -12,6 +12,7 @@ export function openOverflowMenu(options: {
   onPip: () => void;
   onOff: () => void;
   onSelectTrack: (id: string) => void;
+  onCreate: () => void;
   onImport: () => void;
 }): void {
   const menu = new Menu();
@@ -62,6 +63,12 @@ export function openOverflowMenu(options: {
     if (row.kind === "track") {
       menu.addItem((item) => {
         item.setTitle(row.label).setChecked(row.checked).onClick(() => options.onSelectTrack(row.id));
+      });
+      continue;
+    }
+    if (row.kind === "create") {
+      menu.addItem((item) => {
+        item.setTitle("Create").setIcon("lucide-captions").onClick(() => options.onCreate());
       });
       continue;
     }
