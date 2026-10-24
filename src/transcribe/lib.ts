@@ -8,11 +8,14 @@ import { appendWindowCues, chunksToCues, pcmWindows } from "./audio";
 import { labelSpeakers } from "./diarize";
 import type { TranscribePcmResume } from "./resume";
 import {
+  loadStagePercent,
+  mergeFileProgress,
   processedDurationSec,
   remainingTranscribeSeconds,
   videoProgressPercent,
   yieldToTracker,
-  type CreateProgressFn
+  type CreateProgressFn,
+  type ProgressEvent
 } from "./progress";
 
 export const TRANSFORMERS_VERSION = "4.3.1";
@@ -173,8 +176,15 @@ export async function transcribePcm(
   const startWindow = clampStartWindow(resume.startWindow, windows.length);
   const cues: SubtitleCue[] = resume.cues ? resume.cues.map((cue) => ({ ...cue })) : [];
   let fallback = resume.fallback ?? "";
+  const reportLoad = (percent: number): void => {
+    onProgress?.(percent, null, "load");
+  };
   const report = (completedWindows: number, remainingSec: number | null = null): void => {
-    onProgress?.(videoProgressPercent(processedDurationSec(windows, completedWindows), duration), remainingSec);
+    onProgress?.(
+      videoProgressPercent(processedDurationSec(windows, completedWindows), duration),
+      remainingSec,
+      "work"
+    );
   };
   const finish = async (): Promise<SubtitleCue[]> => {
     report(windows.length);
@@ -192,9 +202,10 @@ export async function transcribePcm(
     return labeled;
   };
   if (startWindow >= windows.length) return finish();
-  report(startWindow);
+  reportLoad(20);
   const path = nodeRequire<typeof import("path")>("path");
   await ensureTranscriberLib(libDir);
+  reportLoad(35);
   const jsUrl = toUrl(path.join(libDir, "transformers.min.js"));
   const wasmPaths = {
     mjs: toUrl(path.join(libDir, "ort-wasm-simd-threaded.asyncify.mjs")),
@@ -208,16 +219,26 @@ export async function transcribePcm(
   transformers.env.useCustomCache = true;
   transformers.env.customCache = fileCache(modelsDir);
   applyWasmPaths(transformers, wasmPaths, true);
+  reportLoad(40);
+  const downloads = new Map<string, { loaded: number; total: number }>();
   const generate = whisperInputOptions(settings);
   const openAsr = (): ReturnType<TransformersModule["pipeline"]> =>
     transformers.pipeline("automatic-speech-recognition", whisperModelId(settings.transcriberAccuracy), {
       dtype: "q8",
-      device: inferenceDevice()
+      device: inferenceDevice(),
+      progress_callback: (event: ProgressEvent) => {
+        try {
+          reportLoad(loadStagePercent(mergeFileProgress(downloads, event)));
+        } catch {
+          /* keep loading the model */
+        }
+      }
     });
   let asr = await openAsr().catch(async () => {
     applyWasmPaths(transformers, wasmPaths, false);
     return openAsr();
   });
+  reportLoad(100);
   report(startWindow);
   await yieldToTracker();
   const transcribeStarted = Date.now();

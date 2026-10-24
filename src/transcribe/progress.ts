@@ -12,7 +12,13 @@ export function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-export type CreateProgressFn = (percent: number, remainingSec?: number | null) => void;
+export type CreateProgressPhase = "load" | "work";
+
+export type CreateProgressFn = (
+  percent: number,
+  remainingSec?: number | null,
+  phase?: CreateProgressPhase
+) => void;
 
 export function formatRemaining(remainingSec?: number | null): string {
   if (remainingSec == null || !Number.isFinite(remainingSec) || remainingSec <= 0) return "";
@@ -21,9 +27,13 @@ export function formatRemaining(remainingSec?: number | null): string {
   return `~${Math.round(sec / 60)} min left`;
 }
 
-export function formatCreateProgress(percent: number, remainingSec?: number | null): string {
+export function formatCreateProgress(
+  percent: number,
+  remainingSec?: number | null,
+  phase: CreateProgressPhase = "load"
+): string {
   const remaining = formatRemaining(remainingSec);
-  const done = `${clampPercent(percent)}%/100%`;
+  const done = phase === "work" ? `${clampPercent(percent)}%/100%` : `${clampPercent(percent)}%`;
   return remaining ? `Creating subtitles… ${done} · ${remaining}` : `Creating subtitles… ${done}`;
 }
 
@@ -102,7 +112,7 @@ export function mergeFileProgress(
 }
 
 export function loadStagePercent(fraction: number): number {
-  return 20 + 35 * Math.min(1, Math.max(0, fraction));
+  return 40 + 60 * Math.min(1, Math.max(0, fraction));
 }
 
 export const TRACKER_YIELD_MS = 250;

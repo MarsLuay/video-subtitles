@@ -231,11 +231,13 @@ describe("generated track", () => {
 
 describe("create progress", () => {
   it("formats a monotonic percent and tracks model file downloads", () => {
-    expect(formatCreateProgress(12.4)).toBe("Creating subtitles… 12%/100%");
+    expect(formatCreateProgress(12.4)).toBe("Creating subtitles… 12%");
+    expect(formatCreateProgress(12.4, null, "load")).toBe("Creating subtitles… 12%");
+    expect(formatCreateProgress(12.4, null, "work")).toBe("Creating subtitles… 12%/100%");
     expect(formatRemaining(45)).toBe("~45s left");
     expect(formatRemaining(180)).toBe("~3 min left");
-    expect(formatCreateProgress(62, 45)).toBe("Creating subtitles… 62%/100% · ~45s left");
-    expect(formatCreateProgress(100)).toBe("Creating subtitles… 100%/100%");
+    expect(formatCreateProgress(62, 45, "work")).toBe("Creating subtitles… 62%/100% · ~45s left");
+    expect(formatCreateProgress(100, null, "work")).toBe("Creating subtitles… 100%/100%");
     expect(videoProgressPercent(12, 100)).toBe(12);
     expect(videoProgressPercent(50, 200)).toBe(25);
     expect(videoProgressPercent(200, 100)).toBe(100);
@@ -259,8 +261,8 @@ describe("create progress", () => {
     const files = new Map<string, { loaded: number; total: number }>();
     expect(mergeFileProgress(files, { file: "a", loaded: 50, total: 100 })).toBe(0.5);
     expect(mergeFileProgress(files, { file: "b", status: "done", total: 100 })).toBe(0.75);
-    expect(loadStagePercent(0)).toBe(20);
-    expect(loadStagePercent(1)).toBe(55);
+    expect(loadStagePercent(0)).toBe(40);
+    expect(loadStagePercent(1)).toBe(100);
     expect(transcribeStagePercent(0, 4)).toBe(58);
     expect(transcribeStagePercent(2, 4)).toBe(76);
   });
