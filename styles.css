@@ -58,9 +58,32 @@
   max-width: 100%;
 }
 
+.video-subtitles-player:fullscreen,
+.video-subtitles-player:-webkit-full-screen {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+
+.video-subtitles-player:fullscreen > video,
+.video-subtitles-player:-webkit-full-screen > video {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  object-fit: contain;
+}
+
 /* Author CSS cannot add rows to Chromium's closed overflow list. Cover that 3-dot. */
 .video-subtitles-player video::-webkit-media-controls-overflow-button,
-.video-subtitles-player video::-internal-media-controls-overflow-button {
+.video-subtitles-player video::-internal-media-controls-overflow-button,
+.video-subtitles-player video::-webkit-media-controls-fullscreen-button,
+.video-subtitles-player video::-internal-media-controls-fullscreen-button {
   pointer-events: none;
 }
 
@@ -89,6 +112,13 @@
 .video-subtitles-overflow-hit.is-idle {
   opacity: 0;
   pointer-events: none;
+}
+
+.video-subtitles-fullscreen-hit {
+  right: var(--video-subtitles-fs-right, 48px);
+  bottom: var(--video-subtitles-fs-bottom, 24px);
+  width: var(--video-subtitles-fs-width, 48px);
+  height: var(--video-subtitles-fs-height, 48px);
 }
 
 .video-subtitles-cues {

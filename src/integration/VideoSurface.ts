@@ -8,7 +8,14 @@ import type { VideoSubtitleSettings } from "../settings";
 import { resolveVideoFile } from "./resolveVideoFile";
 import { renderCueOverlay } from "../ui/captionOverlay";
 import { toggleOverflowMenu } from "../ui/overflowMenu";
-import { DEBUG_SHOW_OVERFLOW_HIT, measureOverflowHit } from "../ui/overflowButton";
+import { DEBUG_SHOW_OVERFLOW_HIT, measureFullscreenHit, measureOverflowHit } from "../ui/overflowButton";
+import {
+  currentFullscreenElement,
+  exitFullscreen,
+  fullscreenMenuParent,
+  isPlayerFullscreen,
+  requestFullscreen
+} from "../ui/fullscreen";
 import { pickSubtitleFile } from "../ui/pickSubtitleFile";
 import { parseSubtitle } from "../subtitles/parseSubtitle";
 import { labelFromFilename, type SubtitleCue } from "../subtitles/cues";
@@ -44,7 +51,10 @@ class VideoSession {
   private resizeObserver: ResizeObserver | null = null;
   private readonly player: HTMLElement;
   private readonly hitEl: HTMLElement;
+  private readonly fsHitEl: HTMLElement;
   private readonly cuesEl: HTMLElement;
+  private redirectingFullscreen = false;
+  private nativeRequestFullscreen: HTMLVideoElement["requestFullscreen"] | null = null;
   private readonly onTime = (): void => this.paintCues();
   private persistQueue: Promise<void> = Promise.resolve();
   private menu: Menu | null = null;
@@ -66,7 +76,18 @@ class VideoSession {
         "aria-label": "More options"
       }
     });
-    if (DEBUG_SHOW_OVERFLOW_HIT) this.hitEl.addClass("is-debug");
+    this.fsHitEl = this.player.createDiv({
+      cls: "video-subtitles-overflow-hit video-subtitles-fullscreen-hit",
+      attr: {
+        role: "button",
+        "aria-label": "Full screen"
+      }
+    });
+    if (DEBUG_SHOW_OVERFLOW_HIT) {
+      this.hitEl.addClass("is-debug");
+      this.fsHitEl.addClass("is-debug");
+    }
+    this.bindVideoFullscreen();
     this.syncHitSize();
     this.resizeObserver = new ResizeObserver(() => this.syncHitSize());
     this.resizeObserver.observe(this.video);
@@ -75,11 +96,18 @@ class VideoSession {
     this.video.addEventListener("loadedmetadata", this.onLoaded);
     this.video.addEventListener("play", this.armHit);
     this.video.addEventListener("pause", this.armHit);
+    this.video.addEventListener("dblclick", this.onVideoDblClick, true);
     this.player.addEventListener("mousemove", this.armHit);
     this.player.addEventListener("mouseleave", this.onPlayerLeave);
     this.hitEl.addEventListener("pointerdown", this.onHitPointer);
     this.hitEl.addEventListener("mousedown", this.onHitPointer);
     this.hitEl.addEventListener("click", this.onHitClick);
+    this.fsHitEl.addEventListener("pointerdown", this.onHitPointer);
+    this.fsHitEl.addEventListener("mousedown", this.onHitPointer);
+    this.fsHitEl.addEventListener("click", this.onFullscreenHitClick);
+    const doc = this.video.ownerDocument;
+    doc.addEventListener("fullscreenchange", this.onFullscreenChange);
+    doc.addEventListener("webkitfullscreenchange", this.onFullscreenChange);
     this.armHit();
   }
 
@@ -109,12 +137,21 @@ class VideoSession {
     this.video.removeEventListener("loadedmetadata", this.onLoaded);
     this.video.removeEventListener("play", this.armHit);
     this.video.removeEventListener("pause", this.armHit);
+    this.video.removeEventListener("dblclick", this.onVideoDblClick, true);
     this.player.removeEventListener("mousemove", this.armHit);
     this.player.removeEventListener("mouseleave", this.onPlayerLeave);
     this.hitEl.removeEventListener("pointerdown", this.onHitPointer);
     this.hitEl.removeEventListener("mousedown", this.onHitPointer);
     this.hitEl.removeEventListener("click", this.onHitClick);
+    this.fsHitEl.removeEventListener("pointerdown", this.onHitPointer);
+    this.fsHitEl.removeEventListener("mousedown", this.onHitPointer);
+    this.fsHitEl.removeEventListener("click", this.onFullscreenHitClick);
+    const doc = this.video.ownerDocument;
+    doc.removeEventListener("fullscreenchange", this.onFullscreenChange);
+    doc.removeEventListener("webkitfullscreenchange", this.onFullscreenChange);
+    this.unbindVideoFullscreen();
     this.hitEl.detach();
+    this.fsHitEl.detach();
     this.cuesEl.detach();
     const parent = this.player.parentElement;
     if (parent) parent.insertBefore(this.video, this.player);
@@ -128,26 +165,98 @@ class VideoSession {
 
   private syncHitSize(): void {
     const box = measureOverflowHit(this.video);
+    const fullscreen = measureFullscreenHit(this.video);
     this.player.setCssProps({
       "--video-subtitles-hit-width": `${box.width}px`,
       "--video-subtitles-hit-height": `${box.height}px`,
       "--video-subtitles-hit-right": `${box.right}px`,
-      "--video-subtitles-hit-bottom": `${box.bottom}px`
+      "--video-subtitles-hit-bottom": `${box.bottom}px`,
+      "--video-subtitles-fs-width": `${fullscreen.width}px`,
+      "--video-subtitles-fs-height": `${fullscreen.height}px`,
+      "--video-subtitles-fs-right": `${fullscreen.right}px`,
+      "--video-subtitles-fs-bottom": `${fullscreen.bottom}px`
     });
   }
 
+  private setHitsIdle(idle: boolean): void {
+    this.hitEl.toggleClass("is-idle", idle);
+    this.fsHitEl.toggleClass("is-idle", idle);
+  }
+
   private readonly armHit = (): void => {
-    this.hitEl.removeClass("is-idle");
+    this.setHitsIdle(false);
     const win = this.player.win;
     win.clearTimeout(this.idleTimer);
     if (!this.video.paused) {
-      this.idleTimer = win.setTimeout(() => this.hitEl.addClass("is-idle"), 2500);
+      this.idleTimer = win.setTimeout(() => this.setHitsIdle(true), 2500);
     }
   };
 
   private readonly onPlayerLeave = (): void => {
-    if (!this.video.paused) this.hitEl.addClass("is-idle");
+    if (!this.video.paused) this.setHitsIdle(true);
   };
+
+  private bindVideoFullscreen(): void {
+    if (typeof this.video.requestFullscreen !== "function") return;
+    this.nativeRequestFullscreen = this.video.requestFullscreen.bind(this.video);
+    this.video.requestFullscreen = () => requestFullscreen(this.player);
+  }
+
+  private unbindVideoFullscreen(): void {
+    if (this.nativeRequestFullscreen) {
+      this.video.requestFullscreen = this.nativeRequestFullscreen;
+      this.nativeRequestFullscreen = null;
+    }
+  }
+
+  private readonly onFullscreenChange = (): void => {
+    const full = currentFullscreenElement(this.video.ownerDocument);
+    if (full === this.video) {
+      void this.promoteFullscreenToPlayer();
+      return;
+    }
+    this.syncHitSize();
+    this.armHit();
+  };
+
+  private readonly onVideoDblClick = (event: MouseEvent): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    void this.togglePlayerFullscreen();
+  };
+
+  private readonly onFullscreenHitClick = (event: MouseEvent): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    void this.togglePlayerFullscreen();
+  };
+
+  private async togglePlayerFullscreen(): Promise<void> {
+    const doc = this.video.ownerDocument;
+    try {
+      if (isPlayerFullscreen(doc, this.player)) await exitFullscreen(doc);
+      else await requestFullscreen(this.player);
+    } catch (error) {
+      console.error(formatError(error));
+    }
+    this.syncHitSize();
+  }
+
+  private async promoteFullscreenToPlayer(): Promise<void> {
+    if (this.redirectingFullscreen) return;
+    const doc = this.video.ownerDocument;
+    this.redirectingFullscreen = true;
+    try {
+      if (currentFullscreenElement(doc) === this.video) await exitFullscreen(doc);
+      if (currentFullscreenElement(doc) !== this.player) await requestFullscreen(this.player);
+    } catch (error) {
+      console.error(formatError(error));
+    } finally {
+      this.redirectingFullscreen = false;
+      this.syncHitSize();
+      this.armHit();
+    }
+  }
 
   private readonly onHitPointer = (event: Event): void => {
     event.stopPropagation();
@@ -165,6 +274,7 @@ class VideoSession {
       tracks: this.store.tracks,
       activeTrackId: this.store.activeTrackId,
       playbackRate: this.video.playbackRate,
+      parent: fullscreenMenuParent(this.video.ownerDocument, this.player),
       onDownload: () => {
         void this.downloadVideo();
       },

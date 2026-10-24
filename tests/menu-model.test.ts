@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { Menu } from "obsidian";
 import { buildSubtitleMenuRows, playbackSpeedLabel } from "../src/ui/menuModel";
 import { toggleOverflowMenu } from "../src/ui/overflowMenu";
-import { DEBUG_SHOW_OVERFLOW_HIT, isOverflowButtonHit, measureOverflowHit, overflowControlsVisible } from "../src/ui/overflowButton";
+import { DEBUG_SHOW_OVERFLOW_HIT, isOverflowButtonHit, measureFullscreenHit, measureOverflowHit, overflowControlsVisible } from "../src/ui/overflowButton";
+import { currentFullscreenElement, fullscreenMenuParent, isPlayerFullscreen } from "../src/ui/fullscreen";
 
 describe("player overflow 3-dot", () => {
   it("keeps the overflow hit box invisible", () => {
@@ -62,6 +63,12 @@ describe("player overflow 3-dot", () => {
       width: 48,
       height: 48,
       right: 0,
+      bottom: 24
+    });
+    expect(measureFullscreenHit(video)).toEqual({
+      width: 48,
+      height: 48,
+      right: 48,
       bottom: 24
     });
   });
@@ -136,6 +143,22 @@ describe("buildSubtitleMenuRows", () => {
     ]);
     expect(rows[4]).toEqual({ kind: "off", checked: false });
     expect(rows[5]).toEqual({ kind: "track", id: "sub-1", label: "lecture", checked: true });
+  });
+});
+
+describe("player fullscreen", () => {
+  it("parents the overflow menu to the player only while that player is fullscreen", () => {
+    const player = document.createElement("div");
+    const other = document.createElement("video");
+    const doc = { fullscreenElement: null } as unknown as Document;
+    expect(currentFullscreenElement(doc)).toBeNull();
+    expect(fullscreenMenuParent(doc, player)).toBeUndefined();
+    (doc as { fullscreenElement: Element | null }).fullscreenElement = player;
+    expect(isPlayerFullscreen(doc, player)).toBe(true);
+    expect(fullscreenMenuParent(doc, player)).toBe(player);
+    (doc as { fullscreenElement: Element | null }).fullscreenElement = other;
+    expect(isPlayerFullscreen(doc, player)).toBe(false);
+    expect(fullscreenMenuParent(doc, player)).toBeUndefined();
   });
 });
 

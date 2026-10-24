@@ -95,6 +95,9 @@ export class Menu {
   setUseNativeMenu(_useNative: boolean): this {
     return this;
   }
+  setParentElement(_el: HTMLElement): this {
+    return this;
+  }
   showAtMouseEvent(_event: MouseEvent): void {}
   showAtPosition(_position: { x: number; y: number }): void {}
   hide(): this {

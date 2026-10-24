@@ -7,6 +7,7 @@ export function openOverflowMenu(options: {
   tracks: readonly SubtitleTrack[];
   activeTrackId: string | null;
   playbackRate: number;
+  parent?: HTMLElement | undefined;
   onDownload: () => void;
   onRate: (rate: number) => void;
   onPip: () => void;
@@ -17,6 +18,7 @@ export function openOverflowMenu(options: {
 }): Menu {
   const menu = new Menu();
   menu.setUseNativeMenu(false);
+  if (options.parent) menu.setParentElement(options.parent);
   for (const row of buildSubtitleMenuRows({
     tracks: options.tracks,
     activeTrackId: options.activeTrackId

@@ -14,6 +14,11 @@ const OVERFLOW_PSEUDOS = [
   "::-internal-media-controls-overflow-button"
 ] as const;
 
+const FULLSCREEN_PSEUDOS = [
+  "::-webkit-media-controls-fullscreen-button",
+  "::-internal-media-controls-fullscreen-button"
+] as const;
+
 export type OverflowHitBox = {
   width: number;
   height: number;
@@ -55,7 +60,7 @@ export function measureOverflowHit(video: HTMLVideoElement): OverflowHitBox {
   const win = viewOf(video);
   if (!win) return fallback;
 
-  const overflow = firstOverflowStyle(win, video);
+  const overflow = firstControlStyle(win, video, OVERFLOW_PSEUDOS);
   if (!overflow) return fallback;
 
   const enclosure = win.getComputedStyle(video, "::-webkit-media-controls-enclosure");
@@ -82,8 +87,35 @@ function viewOf(video: HTMLVideoElement): Window | null {
   return withWin.win ?? video.ownerDocument.defaultView;
 }
 
-function firstOverflowStyle(win: Window, video: HTMLVideoElement): CSSStyleDeclaration | null {
-  for (const pseudo of OVERFLOW_PSEUDOS) {
+export function measureFullscreenHit(video: HTMLVideoElement): OverflowHitBox {
+  const overflow = measureOverflowHit(video);
+  const fallback: OverflowHitBox = {
+    width: overflow.width,
+    height: overflow.height,
+    right: overflow.width + overflow.right,
+    bottom: overflow.bottom
+  };
+  const win = viewOf(video);
+  if (!win) return fallback;
+  const fullscreen = firstControlStyle(win, video, FULLSCREEN_PSEUDOS);
+  if (!fullscreen) return fallback;
+  return {
+    width: px(fullscreen.width) || fallback.width,
+    height: px(fullscreen.height) || fallback.height,
+    right: px(fullscreen.marginRight) || px(fullscreen.right) || fallback.right,
+    bottom:
+      px(fullscreen.marginBottom) ||
+      px(fullscreen.bottom) ||
+      fallback.bottom
+  };
+}
+
+function firstControlStyle(
+  win: Window,
+  video: HTMLVideoElement,
+  pseudos: readonly string[]
+): CSSStyleDeclaration | null {
+  for (const pseudo of pseudos) {
     const style = win.getComputedStyle(video, pseudo);
     const width = px(style.width);
     const height = px(style.height);
