@@ -2,7 +2,7 @@ import { Notice, TFile, type App, type Plugin } from "obsidian";
 import { resolveVideoFile } from "./resolveVideoFile";
 import { renderCueOverlay } from "../ui/captionOverlay";
 import { openOverflowMenu } from "../ui/overflowMenu";
-import { DEBUG_SHOW_OVERFLOW_HIT } from "../ui/overflowButton";
+import { DEBUG_SHOW_OVERFLOW_HIT, measureOverflowHit } from "../ui/overflowButton";
 import { pickSubtitleFile } from "../ui/pickSubtitleFile";
 import { parseSubtitle } from "../subtitles/parseSubtitle";
 import { labelFromFilename } from "../subtitles/cues";
@@ -20,6 +20,7 @@ class VideoSession {
   private store: AbsorbedStore = emptyStore();
   private file: TFile | null = null;
   private idleTimer = 0;
+  private resizeObserver: ResizeObserver | null = null;
   private readonly player: HTMLElement;
   private readonly hitEl: HTMLElement;
   private readonly cuesEl: HTMLElement;
@@ -44,9 +45,12 @@ class VideoSession {
       }
     });
     if (DEBUG_SHOW_OVERFLOW_HIT) this.hitEl.addClass("is-debug");
+    this.syncHitSize();
+    this.resizeObserver = new ResizeObserver(() => this.syncHitSize());
+    this.resizeObserver.observe(this.video);
     this.video.addEventListener("timeupdate", this.onTime);
     this.video.addEventListener("seeked", this.onTime);
-    this.video.addEventListener("loadedmetadata", this.onTime);
+    this.video.addEventListener("loadedmetadata", this.onLoaded);
     this.video.addEventListener("play", this.armHit);
     this.video.addEventListener("pause", this.armHit);
     this.player.addEventListener("mousemove", this.armHit);
@@ -74,9 +78,11 @@ class VideoSession {
 
   destroy(): void {
     this.player.win.clearTimeout(this.idleTimer);
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
     this.video.removeEventListener("timeupdate", this.onTime);
     this.video.removeEventListener("seeked", this.onTime);
-    this.video.removeEventListener("loadedmetadata", this.onTime);
+    this.video.removeEventListener("loadedmetadata", this.onLoaded);
     this.video.removeEventListener("play", this.armHit);
     this.video.removeEventListener("pause", this.armHit);
     this.player.removeEventListener("mousemove", this.armHit);
@@ -89,6 +95,21 @@ class VideoSession {
     const parent = this.player.parentElement;
     if (parent) parent.insertBefore(this.video, this.player);
     this.player.detach();
+  }
+
+  private readonly onLoaded = (): void => {
+    this.onTime();
+    this.syncHitSize();
+  };
+
+  private syncHitSize(): void {
+    const box = measureOverflowHit(this.video);
+    this.player.setCssProps({
+      "--video-subtitles-hit-width": `${box.width}px`,
+      "--video-subtitles-hit-height": `${box.height}px`,
+      "--video-subtitles-hit-right": `${box.right}px`,
+      "--video-subtitles-hit-bottom": `${box.bottom}px`
+    });
   }
 
   private readonly armHit = (): void => {

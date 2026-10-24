@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildSubtitleMenuRows, playbackSpeedLabel } from "../src/ui/menuModel";
-import { isOverflowButtonHit, overflowControlsVisible } from "../src/ui/overflowButton";
+import { isOverflowButtonHit, measureOverflowHit, overflowControlsVisible } from "../src/ui/overflowButton";
 
 describe("player overflow 3-dot", () => {
   it("hits the native overflow button at the bottom-right of the control bar", () => {
@@ -15,6 +15,47 @@ describe("player overflow 3-dot", () => {
     expect(overflowControlsVisible(true, false)).toBe(true);
     expect(overflowControlsVisible(false, true)).toBe(true);
     expect(overflowControlsVisible(false, false)).toBe(false);
+  });
+
+  it("uses the public overflow-button pseudo size when Chromium exposes it", () => {
+    const video = document.createElement("video");
+    const original = window.getComputedStyle.bind(window);
+    window.getComputedStyle = ((el: Element, pseudo?: string | null) => {
+      if (pseudo === "::-webkit-media-controls-overflow-button") {
+        return {
+          width: "36px",
+          height: "36px",
+          marginRight: "4px",
+          marginBottom: "2px",
+          right: "auto",
+          bottom: "auto"
+        } as CSSStyleDeclaration;
+      }
+      if (pseudo === "::-webkit-media-controls-enclosure") {
+        return { paddingRight: "5px", paddingBottom: "5px" } as CSSStyleDeclaration;
+      }
+      return original(el, pseudo);
+    }) as typeof window.getComputedStyle;
+    try {
+      expect(measureOverflowHit(video)).toEqual({
+        width: 36,
+        height: 36,
+        right: 4,
+        bottom: 2
+      });
+    } finally {
+      window.getComputedStyle = original;
+    }
+  });
+
+  it("falls back to Chromium's 48px overflow button when the pseudo has no size", () => {
+    const video = document.createElement("video");
+    expect(measureOverflowHit(video)).toEqual({
+      width: 48,
+      height: 48,
+      right: 0,
+      bottom: 0
+    });
   });
 });
 
