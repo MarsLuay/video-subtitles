@@ -6,7 +6,7 @@ import { nodeRequire } from "./node";
 import { transcribePcm } from "./lib";
 import { yieldToTracker } from "./progress";
 import { toArrayBuffer } from "../subtitles/absorb/bytes";
-import type { TranscriberAccuracy } from "../settings";
+import type { CreateTranscribeSettings } from "../settings";
 import type { SubtitleCue } from "../subtitles/cues";
 
 const DECODE_AUDIO_MAX_BYTES = 80 * 1024 * 1024;
@@ -72,7 +72,7 @@ export function fileResourceUrl(plugin: Plugin, absPath: string): string {
 export async function transcribeVideoFile(
   plugin: Plugin,
   videoPath: string,
-  accuracy: TranscriberAccuracy,
+  settings: CreateTranscribeSettings,
   win: Window,
   onProgress?: (percent: number) => void
 ): Promise<SubtitleCue[]> {
@@ -102,5 +102,5 @@ export async function transcribeVideoFile(
   if (pcm.length === 0) throw new Error("The video has no audio to transcribe");
   onProgress?.(15);
   await yieldToTracker();
-  return transcribePcm(pcm, accuracy, dirs.lib, dirs.models, (file) => fileResourceUrl(plugin, file), onProgress);
+  return transcribePcm(pcm, settings, dirs.lib, dirs.models, (file) => fileResourceUrl(plugin, file), onProgress);
 }

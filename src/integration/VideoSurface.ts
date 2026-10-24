@@ -288,7 +288,7 @@ class VideoSession {
       const cues = await transcribeVideoFile(
         this.plugin,
         vaultFileAbsPath(this.plugin, file),
-        this.plugin.subtitleSettings.transcriberAccuracy,
+        this.plugin.subtitleSettings,
         win,
         status.setPercent
       );

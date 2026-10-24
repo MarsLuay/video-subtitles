@@ -27,14 +27,21 @@ import {
   startEstimate,
   transcribeStagePercent
 } from "../src/transcribe/progress";
+import { labelSpeakers, prefixSpeaker } from "../src/transcribe/diarize";
 import { upsertGeneratedTrack } from "../src/subtitles/generatedTrack";
 import { emptyStore } from "../src/subtitles/store";
+import { VideoSubtitlesSettingTab, type SettingsHost } from "../src/settingsTab";
 import {
   ACCURACY_LABELS,
   DEFAULT_SETTINGS,
   GENERATED_TRACK_LABEL,
+  LANGUAGE_LABELS,
+  MAX_SPEAKERS,
   mergeSettings,
-  TRANSCRIBER_ACCURACY
+  TRANSCRIBER_ACCURACY,
+  TRANSCRIBER_LANGUAGE,
+  whisperInputOptions,
+  type VideoSubtitleSettings
 } from "../src/settings";
 
 function gb(value: number): number {
@@ -69,15 +76,89 @@ describe("subtitle settings", () => {
   it("keeps the transcriber by default and leaves first-run accuracy unset", () => {
     expect(DEFAULT_SETTINGS.keepTranscriber).toBe(true);
     expect(DEFAULT_SETTINGS.accuracyInitialized).toBe(false);
+    expect(DEFAULT_SETTINGS.diarization).toBe(false);
+    expect(DEFAULT_SETTINGS.transcriberLanguage).toBe("auto");
+    expect(DEFAULT_SETTINGS.translateToEnglish).toBe(false);
+    expect(DEFAULT_SETTINGS.wordTimestamps).toBe(false);
     expect(mergeSettings(undefined).keepTranscriber).toBe(true);
     expect(mergeSettings({ keepTranscriber: false }).keepTranscriber).toBe(false);
     expect(mergeSettings({ transcriberAccuracy: "large", accuracyInitialized: true })).toEqual({
       keepTranscriber: true,
       transcriberAccuracy: "large",
-      accuracyInitialized: true
+      accuracyInitialized: true,
+      transcriberLanguage: "auto",
+      translateToEnglish: false,
+      wordTimestamps: false,
+      diarization: false,
+      maxSpeakers: 2
     });
     expect(mergeSettings({ transcriberAccuracy: "nope" }).transcriberAccuracy).toBe("base");
+    expect(mergeSettings({ diarization: true, maxSpeakers: 3, transcriberLanguage: "fr" })).toMatchObject({
+      diarization: true,
+      maxSpeakers: 3,
+      transcriberLanguage: "fr"
+    });
+    expect(mergeSettings({ maxSpeakers: 9, transcriberLanguage: "xx" })).toMatchObject({
+      maxSpeakers: 2,
+      transcriberLanguage: "auto"
+    });
     expect(TRANSCRIBER_ACCURACY.every((value) => value in ACCURACY_LABELS)).toBe(true);
+    expect(TRANSCRIBER_LANGUAGE.every((value) => value in LANGUAGE_LABELS)).toBe(true);
+    expect(MAX_SPEAKERS).toEqual([2, 3, 4]);
+  });
+
+  it("maps Create settings onto Whisper generate options", () => {
+    expect(whisperInputOptions(DEFAULT_SETTINGS)).toEqual({ return_timestamps: true });
+    expect(
+      whisperInputOptions({
+        ...DEFAULT_SETTINGS,
+        transcriberLanguage: "es",
+        translateToEnglish: true,
+        wordTimestamps: true
+      })
+    ).toEqual({
+      return_timestamps: "word",
+      language: "es",
+      task: "translate"
+    });
+  });
+
+  it("lists diarization and other Create options in settings", () => {
+    const host = {
+      app: { workspace: { containerEl: document.createElement("div") }, vault: {} },
+      subtitleSettings: { ...DEFAULT_SETTINGS } satisfies VideoSubtitleSettings,
+      saveSettings: async () => undefined
+    } as unknown as SettingsHost;
+    const tab = new VideoSubtitlesSettingTab(host.app, host);
+    expect(tab.getSettingDefinitions().map((def) => def.name)).toEqual([
+      "Keep transcriber",
+      "Transcriber accuracy",
+      "Language",
+      "Translate to English",
+      "Word timestamps",
+      "Diarization",
+      "Max speakers"
+    ]);
+  });
+});
+
+describe("diarization", () => {
+  it("prefixes distinct speakers from local audio and leaves existing labels", () => {
+    expect(prefixSpeaker("hello", 2)).toBe("Speaker 2: hello");
+    expect(prefixSpeaker("Speaker 1: already", 3)).toBe("Speaker 1: already");
+    const pcm = new Float32Array(WHISPER_SAMPLE_RATE * 2);
+    pcm.fill(0.9, 0, WHISPER_SAMPLE_RATE);
+    pcm.fill(0.02, WHISPER_SAMPLE_RATE);
+    const labeled = labelSpeakers(
+      pcm,
+      [
+        { start: 0, end: 1, text: "loud" },
+        { start: 1, end: 2, text: "quiet" }
+      ],
+      2
+    );
+    expect(labeled[0]?.text).toMatch(/^Speaker 1: loud$/);
+    expect(labeled[1]?.text).toMatch(/^Speaker 2: quiet$/);
   });
 });
 

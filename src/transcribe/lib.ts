@@ -1,10 +1,11 @@
 import { downloadFile, existsFile } from "./download";
 import { nodeRequire } from "./node";
 import { fileCache } from "./cache";
-import type { TranscriberAccuracy } from "../settings";
+import { whisperInputOptions, type CreateTranscribeSettings } from "../settings";
 import { whisperModelId } from "./models";
 import type { SubtitleCue } from "../subtitles/cues";
 import { appendWindowCues, chunksToCues, pcmWindows } from "./audio";
+import { labelSpeakers } from "./diarize";
 import { loadStagePercent, mergeFileProgress, transcribeStagePercent, yieldToTracker, type ProgressEvent } from "./progress";
 
 export const TRANSFORMERS_VERSION = "4.3.1";
@@ -153,7 +154,7 @@ function applyWasmPaths(
 
 export async function transcribePcm(
   pcm: Float32Array,
-  accuracy: TranscriberAccuracy,
+  settings: CreateTranscribeSettings,
   libDir: string,
   modelsDir: string,
   toUrl: (absPath: string) => string,
@@ -177,8 +178,9 @@ export async function transcribePcm(
   applyWasmPaths(transformers, wasmPaths, true);
   onProgress?.(20);
   const downloads = new Map<string, { loaded: number; total: number }>();
+  const generate = whisperInputOptions(settings);
   const openAsr = (): ReturnType<TransformersModule["pipeline"]> =>
-    transformers.pipeline("automatic-speech-recognition", whisperModelId(accuracy), {
+    transformers.pipeline("automatic-speech-recognition", whisperModelId(settings.transcriberAccuracy), {
       dtype: "q8",
       device: inferenceDevice(),
       progress_callback: (event: ProgressEvent) => {
@@ -207,13 +209,13 @@ export async function transcribePcm(
       await yieldToTracker();
       let result: { text?: string; chunks?: { text?: string; timestamp?: [number | null, number | null] }[] };
       try {
-        result = await asr(new Float32Array(part.samples), { return_timestamps: true });
+        result = await asr(new Float32Array(part.samples), generate);
       } catch (error) {
         if (index !== 0) throw error;
         applyWasmPaths(transformers, wasmPaths, false);
         if (typeof asr.dispose === "function") await asr.dispose();
         asr = await openAsr();
-        result = await asr(new Float32Array(part.samples), { return_timestamps: true });
+        result = await asr(new Float32Array(part.samples), generate);
       }
       const shifted = chunksToCues(result.chunks ?? []).map((cue) => ({
         start: cue.start + part.offsetSec,
@@ -227,9 +229,18 @@ export async function transcribePcm(
       }
     }
     onProgress?.(96);
-    if (cues.length > 0) return cues;
-    if (!fallback) throw new Error("The transcriber returned no speech");
-    return [{ start: 0, end: Math.max(0.5, duration), text: fallback }];
+    const raw =
+      cues.length > 0
+        ? cues
+        : fallback
+          ? [{ start: 0, end: Math.max(0.5, duration), text: fallback }]
+          : null;
+    if (!raw) throw new Error("The transcriber returned no speech");
+    if (!settings.diarization) return raw;
+    await yieldToTracker();
+    const labeled = labelSpeakers(pcm, raw, settings.maxSpeakers);
+    onProgress?.(97);
+    return labeled;
   } finally {
     if (typeof asr.dispose === "function") await asr.dispose();
   }
