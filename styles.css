@@ -120,7 +120,14 @@
   background: none;
   box-shadow: none;
   opacity: 0;
-  pointer-events: none;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+/* Hovering the hit is outside <video>, so keep the native bar visible. */
+.video-subtitles-player:hover video::-webkit-media-controls-enclosure,
+.video-subtitles-player:hover video::-webkit-media-controls-panel {
+  opacity: 1;
 }
 
 .video-subtitles-overflow-hit.is-idle {

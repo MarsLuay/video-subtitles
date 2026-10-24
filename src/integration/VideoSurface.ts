@@ -106,6 +106,8 @@ class VideoSession {
     this.video.addEventListener("pointerdown", this.onVideoHitPointer, true);
     this.video.addEventListener("mousedown", this.onVideoHitPointer, true);
     this.video.addEventListener("click", this.onVideoHitClick, true);
+    this.bindHit(this.hitEl, this.onHitClick);
+    this.bindHit(this.fsHitEl, this.onFullscreenHitClick);
     this.player.addEventListener("mousemove", this.onPlayerMove);
     this.player.addEventListener("mouseleave", this.onPlayerLeave);
     const doc = this.video.ownerDocument;
@@ -144,6 +146,8 @@ class VideoSession {
     this.video.removeEventListener("pointerdown", this.onVideoHitPointer, true);
     this.video.removeEventListener("mousedown", this.onVideoHitPointer, true);
     this.video.removeEventListener("click", this.onVideoHitClick, true);
+    this.unbindHit(this.hitEl, this.onHitClick);
+    this.unbindHit(this.fsHitEl, this.onFullscreenHitClick);
     this.player.removeEventListener("mousemove", this.onPlayerMove);
     this.player.removeEventListener("mouseleave", this.onPlayerLeave);
     const doc = this.video.ownerDocument;
@@ -231,6 +235,34 @@ class VideoSession {
     const kind = this.stealControlEvent(event, true);
     if (kind === "overflow") this.openMenu(event);
     if (kind === "fullscreen") void this.togglePlayerFullscreen();
+  };
+
+  private bindHit(el: HTMLElement, onClick: (event: MouseEvent) => void): void {
+    el.addEventListener("pointerdown", this.onHitPointer);
+    el.addEventListener("mousedown", this.onHitPointer);
+    el.addEventListener("click", onClick);
+  }
+
+  private unbindHit(el: HTMLElement, onClick: (event: MouseEvent) => void): void {
+    el.removeEventListener("pointerdown", this.onHitPointer);
+    el.removeEventListener("mousedown", this.onHitPointer);
+    el.removeEventListener("click", onClick);
+  }
+
+  private readonly onHitPointer = (event: Event): void => {
+    event.stopPropagation();
+  };
+
+  private readonly onHitClick = (event: MouseEvent): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    this.openMenu(event);
+  };
+
+  private readonly onFullscreenHitClick = (event: MouseEvent): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    void this.togglePlayerFullscreen();
   };
 
   private bindVideoFullscreen(): void {
