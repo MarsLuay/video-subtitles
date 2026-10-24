@@ -17,7 +17,6 @@
 /* Author CSS cannot add rows to Chromium's closed overflow list. Cover that 3-dot. */
 .video-subtitles-player video::-webkit-media-controls-overflow-button,
 .video-subtitles-player video::-internal-media-controls-overflow-button {
-  opacity: 0;
   pointer-events: none;
 }
 
@@ -26,9 +25,6 @@
   right: 0;
   bottom: 0;
   z-index: 7;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   width: 48px;
   height: 52px;
   padding: 0;
@@ -36,14 +32,14 @@
   border: none;
   background: none;
   box-shadow: none;
-  color: #fff;
+  opacity: 0;
   cursor: pointer;
-  filter: drop-shadow(0 0 2px #000);
 }
 
-.video-subtitles-overflow-hit svg {
-  width: 18px;
-  height: 18px;
+.video-subtitles-overflow-hit.is-debug {
+  opacity: 1;
+  background: rgba(255, 0, 0, 0.4);
+  outline: 1px solid #f00;
 }
 
 .video-subtitles-overflow-hit.is-idle {

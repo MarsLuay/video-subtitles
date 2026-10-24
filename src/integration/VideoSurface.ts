@@ -1,7 +1,8 @@
-import { Notice, TFile, setIcon, type App, type Plugin } from "obsidian";
+import { Notice, TFile, type App, type Plugin } from "obsidian";
 import { resolveVideoFile } from "./resolveVideoFile";
 import { renderCueOverlay } from "../ui/captionOverlay";
 import { openOverflowMenu } from "../ui/overflowMenu";
+import { DEBUG_SHOW_OVERFLOW_HIT } from "../ui/overflowButton";
 import { pickSubtitleFile } from "../ui/pickSubtitleFile";
 import { parseSubtitle } from "../subtitles/parseSubtitle";
 import { labelFromFilename } from "../subtitles/cues";
@@ -42,7 +43,7 @@ class VideoSession {
         "aria-label": "More options"
       }
     });
-    setIcon(this.hitEl, "lucide-ellipsis-vertical");
+    if (DEBUG_SHOW_OVERFLOW_HIT) this.hitEl.addClass("is-debug");
     this.video.addEventListener("timeupdate", this.onTime);
     this.video.addEventListener("seeked", this.onTime);
     this.video.addEventListener("loadedmetadata", this.onTime);

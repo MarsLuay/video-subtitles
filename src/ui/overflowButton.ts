@@ -2,6 +2,9 @@
 export const OVERFLOW_BUTTON_WIDTH = 48;
 export const OVERFLOW_BAR_HEIGHT = 52;
 
+/** Paint the overflow hit target. Testing only. */
+export const DEBUG_SHOW_OVERFLOW_HIT = true;
+
 export function overflowControlsVisible(paused: boolean, hovering: boolean): boolean {
   return paused || hovering;
 }
