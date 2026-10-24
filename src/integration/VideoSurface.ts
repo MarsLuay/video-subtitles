@@ -1,9 +1,11 @@
 import { Menu, Notice, Platform, TFile, type Plugin } from "obsidian";
-import { isGeneratedTrack, upsertGeneratedTrack } from "../subtitles/generatedTrack";
+import { isGeneratedTrack, spliceGeneratedTrack, upsertGeneratedTrack } from "../subtitles/generatedTrack";
 import { cleanupTranscriber, clearCreateResume, transcriberRoot, transcribeVideoFile, vaultFileAbsPath } from "../transcribe/runtime";
 import { pickAccuracyForHardware } from "../transcribe/hardware";
 import { readHardware } from "../transcribe/node";
+import { videoDurationSec, type TranscribeRange } from "../transcribe/range";
 import { showCreateProgressNotice } from "../ui/createProgressNotice";
+import { promptCreateRange } from "../ui/createRangeModal";
 import type { VideoSubtitleSettings } from "../settings";
 import { resolveVideoFile } from "./resolveVideoFile";
 import { renderCueOverlay } from "../ui/captionOverlay";
@@ -397,6 +399,16 @@ class VideoSession {
       return;
     }
     const file = this.file;
+    let range: TranscribeRange | null = null;
+    if (this.plugin.subtitleSettings.chooseCreateRange) {
+      const duration = videoDurationSec(this.video.duration);
+      if (duration == null) {
+        new Notice("Wait for the video to load, then create again.");
+        return;
+      }
+      range = await promptCreateRange(this.plugin.app, duration, () => this.video.currentTime);
+      if (!range) return;
+    }
     if (!this.plugin.subtitleSettings.accuracyInitialized) {
       try {
         this.plugin.subtitleSettings.transcriberAccuracy = pickAccuracyForHardware(readHardware());
@@ -424,8 +436,9 @@ class VideoSession {
         win,
         status.setPercent,
         async (partial) => {
-          await this.applyGeneratedCues(partial, false);
-        }
+          await this.applyGeneratedCues(partial, false, range);
+        },
+        range
       );
       if (cues.length === 0) {
         status.hide();
@@ -434,7 +447,7 @@ class VideoSession {
         return;
       }
       status.setPercent(100, null, "work");
-      const saved = await this.applyGeneratedCues(cues, true);
+      const saved = await this.applyGeneratedCues(cues, true, range);
       status.hide();
       if (saved) {
         clearCreateResume(this.plugin);
@@ -481,9 +494,15 @@ class VideoSession {
     return this.store.tracks.some((track) => isGeneratedTrack(track) && track.cues.length > 0);
   }
 
-  private async applyGeneratedCues(cues: readonly SubtitleCue[], reload: boolean): Promise<boolean> {
+  private async applyGeneratedCues(
+    cues: readonly SubtitleCue[],
+    reload: boolean,
+    range: TranscribeRange | null = null
+  ): Promise<boolean> {
     if (cues.length === 0) return false;
-    this.store = upsertGeneratedTrack(this.store, cues);
+    this.store = range
+      ? spliceGeneratedTrack(this.store, cues, range)
+      : upsertGeneratedTrack(this.store, cues);
     this.paintCues();
     return this.persist(reload);
   }

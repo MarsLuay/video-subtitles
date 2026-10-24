@@ -1,7 +1,8 @@
 import { FileSystemAdapter, type Plugin, type TFile } from "obsidian";
 import { existsFile, removePath } from "./download";
 import { extractWav, ensureFfmpeg } from "./ffmpeg";
-import { decodeVideoAudio, pcmWindows, readWavPcm } from "./audio";
+import { decodeVideoAudio, pcmWindows, readWavPcm, shiftCues, slicePcm, WHISPER_SAMPLE_RATE } from "./audio";
+import { normalizeTranscribeRange, type TranscribeRange } from "./range";
 import { nodeRequire } from "./node";
 import { transcribePcm } from "./lib";
 import { yieldToTracker, type CreateProgressFn } from "./progress";
@@ -93,7 +94,8 @@ export async function transcribeVideoFile(
   settings: CreateTranscribeSettings,
   win: Window,
   onProgress?: CreateProgressFn,
-  onPartialCues?: (cues: readonly SubtitleCue[]) => void | Promise<void>
+  onPartialCues?: (cues: readonly SubtitleCue[]) => void | Promise<void>,
+  range: TranscribeRange | null = null
 ): Promise<SubtitleCue[]> {
   const fs = nodeRequire<typeof import("fs")>("fs");
   const path = nodeRequire<typeof import("path")>("path");
@@ -119,6 +121,13 @@ export async function transcribeVideoFile(
     if (existsFile(wavPath)) fs.unlinkSync(wavPath);
   }
   if (pcm.length === 0) throw new Error("The video has no audio to transcribe");
+  const durationSec = pcm.length / WHISPER_SAMPLE_RATE;
+  const slice = range ? normalizeTranscribeRange(range.startSec, range.endSec, durationSec) : null;
+  if (range && !slice) throw new Error("That time range is not in the video.");
+  if (slice) pcm = slicePcm(pcm, slice);
+  if (pcm.length === 0) throw new Error("That time range has no audio to transcribe");
+  const offsetSec = slice?.startSec ?? 0;
+  const toVideoCues = (cues: readonly SubtitleCue[]): SubtitleCue[] => shiftCues(cues, offsetSec);
   onProgress?.(15, null, "load");
   await yieldToTracker();
   const resumeFile = createResumePath(plugin);
@@ -126,38 +135,41 @@ export async function transcribeVideoFile(
     videoPath,
     pcmLength: pcm.length,
     windowCount: pcmWindows(pcm).length,
-    settings
+    settings,
+    range: slice
   });
   const saved = readCreateResume(resumeFile);
   const resume = resumeMatches(saved, job) ? saved : null;
   if (resume && resume.cues.length > 0 && onPartialCues) {
     try {
-      await onPartialCues(resume.cues);
+      await onPartialCues(toVideoCues(resume.cues));
     } catch {
       /* keep transcribing */
     }
   }
   try {
-    return await transcribePcm(
-      pcm,
-      settings,
-      dirs.lib,
-      dirs.models,
-      (file) => fileResourceUrl(plugin, file),
-      onProgress,
-      {
-        startWindow: resume?.nextWindow,
-        cues: resume?.cues,
-        fallback: resume?.fallback,
-        onCheckpoint: async (state) => {
-          try {
-            writeCreateResume(resumeFile, { ...job, ...state });
-          } catch {
-            /* keep transcribing */
+    return toVideoCues(
+      await transcribePcm(
+        pcm,
+        settings,
+        dirs.lib,
+        dirs.models,
+        (file) => fileResourceUrl(plugin, file),
+        onProgress,
+        {
+          startWindow: resume?.nextWindow,
+          cues: resume?.cues,
+          fallback: resume?.fallback,
+          onCheckpoint: async (state) => {
+            try {
+              writeCreateResume(resumeFile, { ...job, ...state });
+            } catch {
+              /* keep transcribing */
+            }
+            if (state.cues.length > 0 && onPartialCues) await onPartialCues(toVideoCues(state.cues));
           }
-          if (state.cues.length > 0 && onPartialCues) await onPartialCues(state.cues);
         }
-      }
+      )
     );
   } catch (error) {
     if (error instanceof Error && error.message === "The transcriber returned no speech") {

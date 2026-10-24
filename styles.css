@@ -2,6 +2,26 @@
   display: none;
 }
 
+.video-subtitles-create-range-hint {
+  margin-top: 0;
+}
+
+.video-subtitles-create-range-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.video-subtitles-create-range-label {
+  width: 3.5em;
+  flex: 0 0 auto;
+}
+
+.video-subtitles-create-range-row input {
+  flex: 1;
+}
+
 .video-subtitles-progress-notice {
   min-width: 280px;
 }

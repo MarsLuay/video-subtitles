@@ -49,6 +49,18 @@ export class VideoSubtitlesSettingTab extends PluginSettingTab {
         }
       },
       {
+        name: "Choose Create range",
+        desc: "Ask for a start and end time when you press Create. Off by default transcribes the whole video.",
+        render: (setting: Setting) => {
+          setting.addToggle((toggle) =>
+            toggle.setValue(this.host.subtitleSettings.chooseCreateRange).onChange(async (value) => {
+              this.host.subtitleSettings.chooseCreateRange = value;
+              await this.host.saveSettings();
+            })
+          );
+        }
+      },
+      {
         name: "Transcriber accuracy",
         desc: "Whisper size. The first desktop start picks one from this computer. Later changes are kept.",
         render: (setting: Setting) => {

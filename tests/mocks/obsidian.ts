@@ -41,6 +41,27 @@ export class FileSystemAdapter {
   }
 }
 
+export class Modal {
+  titleEl: HTMLElement;
+  contentEl: HTMLElement;
+  constructor(_app: Plugin["app"]) {
+    this.titleEl = document.createElement("h2");
+    (this.titleEl as HTMLElement & { setText(value: string): void }).setText = (value: string) => {
+      this.titleEl.textContent = value;
+    };
+    this.contentEl = document.createElement("div");
+  }
+  open(): this {
+    this.onOpen();
+    return this;
+  }
+  close(): void {
+    this.onClose();
+  }
+  onOpen(): void {}
+  onClose(): void {}
+}
+
 export class PluginSettingTab {
   app: Plugin["app"];
   plugin: Plugin;

@@ -21,3 +21,16 @@ export function upsertGeneratedTrack(store: AbsorbedStore, cues: readonly Subtit
     activeTrackId: track.id
   };
 }
+
+export function spliceGeneratedTrack(
+  store: AbsorbedStore,
+  cues: readonly SubtitleCue[],
+  range: { startSec: number; endSec: number }
+): AbsorbedStore {
+  const previous = store.tracks.find(isGeneratedTrack);
+  const kept = (previous?.cues ?? []).filter(
+    (cue) => cue.end <= range.startSec + 1e-6 || cue.start >= range.endSec - 1e-6
+  );
+  const next = [...kept, ...cues].sort((a, b) => a.start - b.start || a.end - b.end);
+  return upsertGeneratedTrack(store, next);
+}

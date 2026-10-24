@@ -40,6 +40,7 @@ export interface VideoSubtitleSettings {
   wordTimestamps: boolean;
   diarization: boolean;
   maxSpeakers: MaxSpeakers;
+  chooseCreateRange: boolean;
 }
 
 export type CreateTranscribeSettings = Pick<
@@ -60,7 +61,8 @@ export const DEFAULT_SETTINGS: VideoSubtitleSettings = {
   translateToEnglish: false,
   wordTimestamps: false,
   diarization: false,
-  maxSpeakers: 2
+  maxSpeakers: 2,
+  chooseCreateRange: false
 };
 
 export const ACCURACY_LABELS: Record<TranscriberAccuracy, string> = {
@@ -135,6 +137,7 @@ export function mergeSettings(raw: unknown): VideoSubtitleSettings {
     translateToEnglish: src.translateToEnglish === true,
     wordTimestamps: src.wordTimestamps === true,
     diarization: src.diarization === true,
-    maxSpeakers: isMaxSpeakers(src.maxSpeakers) ? src.maxSpeakers : DEFAULT_SETTINGS.maxSpeakers
+    maxSpeakers: isMaxSpeakers(src.maxSpeakers) ? src.maxSpeakers : DEFAULT_SETTINGS.maxSpeakers,
+    chooseCreateRange: src.chooseCreateRange === true
   };
 }

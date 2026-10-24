@@ -1,10 +1,11 @@
-import { WHISPER_CHUNK_SECONDS, WHISPER_STRIDE_SECONDS } from "./audio";
+import { WHISPER_CHUNK_SECONDS, WHISPER_SAMPLE_RATE, WHISPER_STRIDE_SECONDS } from "./audio";
 import { existsFile, removePath } from "./download";
 import { nodeRequire } from "./node";
 import type { CreateTranscribeSettings } from "../settings";
 import type { SubtitleCue } from "../subtitles/cues";
+import { fullRangeFromPcm, rangeToMs, type TranscribeRange } from "./range";
 
-export const CREATE_RESUME_VERSION = 2 as const;
+export const CREATE_RESUME_VERSION = 3 as const;
 export const CREATE_RESUME_FILE = "create-resume.json";
 
 export type CreateResumeJob = {
@@ -18,6 +19,8 @@ export type CreateResumeJob = {
   transcriberLanguage: string;
   translateToEnglish: boolean;
   wordTimestamps: boolean;
+  rangeStartMs: number;
+  rangeEndMs: number;
 };
 
 export type CreateResumeState = CreateResumeJob & {
@@ -40,7 +43,10 @@ export function createResumeJob(input: {
   pcmLength: number;
   windowCount: number;
   settings: CreateTranscribeSettings;
+  range: TranscribeRange | null;
 }): CreateResumeJob {
+  const range = input.range ?? fullRangeFromPcm(input.pcmLength, WHISPER_SAMPLE_RATE);
+  const { rangeStartMs, rangeEndMs } = rangeToMs(range);
   return {
     version: CREATE_RESUME_VERSION,
     videoPath: input.videoPath,
@@ -51,14 +57,16 @@ export function createResumeJob(input: {
     transcriberAccuracy: input.settings.transcriberAccuracy,
     transcriberLanguage: input.settings.transcriberLanguage,
     translateToEnglish: input.settings.translateToEnglish,
-    wordTimestamps: input.settings.wordTimestamps
+    wordTimestamps: input.settings.wordTimestamps,
+    rangeStartMs,
+    rangeEndMs
   };
 }
 
 export function parseResumeState(raw: unknown): CreateResumeState | null {
   if (!raw || typeof raw !== "object") return null;
   const src = raw as Record<string, unknown>;
-  if (src.version !== CREATE_RESUME_VERSION && src.version !== 1) return null;
+  if (src.version !== CREATE_RESUME_VERSION && src.version !== 1 && src.version !== 2) return null;
   if (typeof src.videoPath !== "string" || !src.videoPath) return null;
   if (!isFiniteNumber(src.pcmLength)) return null;
   if (!isFiniteNumber(src.windowCount) || !isFiniteNumber(src.nextWindow)) return null;
@@ -74,10 +82,15 @@ export function parseResumeState(raw: unknown): CreateResumeState | null {
   const nextWindow = Math.round(src.nextWindow);
   const windowCount = Math.round(src.windowCount);
   if (nextWindow < 0 || nextWindow > windowCount) return null;
+  const pcmLength = Math.round(src.pcmLength);
+  const inferred = rangeToMs(fullRangeFromPcm(pcmLength, WHISPER_SAMPLE_RATE));
+  const rangeStartMs = isFiniteNumber(src.rangeStartMs) ? Math.round(src.rangeStartMs) : inferred.rangeStartMs;
+  const rangeEndMs = isFiniteNumber(src.rangeEndMs) ? Math.round(src.rangeEndMs) : inferred.rangeEndMs;
+  if (rangeStartMs < 0 || rangeEndMs < rangeStartMs) return null;
   return {
     version: CREATE_RESUME_VERSION,
     videoPath: src.videoPath,
-    pcmLength: Math.round(src.pcmLength),
+    pcmLength,
     windowCount,
     chunkSec: src.chunkSec,
     strideSec: src.strideSec,
@@ -85,6 +98,8 @@ export function parseResumeState(raw: unknown): CreateResumeState | null {
     transcriberLanguage: src.transcriberLanguage,
     translateToEnglish: src.translateToEnglish,
     wordTimestamps: src.wordTimestamps,
+    rangeStartMs,
+    rangeEndMs,
     nextWindow,
     cues,
     fallback: typeof src.fallback === "string" ? src.fallback : ""
@@ -103,7 +118,9 @@ export function resumeMatches(saved: unknown, job: CreateResumeJob): saved is Cr
     state.transcriberAccuracy === job.transcriberAccuracy &&
     state.transcriberLanguage === job.transcriberLanguage &&
     state.translateToEnglish === job.translateToEnglish &&
-    state.wordTimestamps === job.wordTimestamps
+    state.wordTimestamps === job.wordTimestamps &&
+    state.rangeStartMs === job.rangeStartMs &&
+    state.rangeEndMs === job.rangeEndMs
   );
 }
 

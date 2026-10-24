@@ -1,4 +1,5 @@
 import type { SubtitleCue } from "../subtitles/cues";
+import type { TranscribeRange } from "./range";
 
 export const WHISPER_SAMPLE_RATE = 16_000;
 export const WHISPER_CHUNK_SECONDS = 12;
@@ -92,6 +93,25 @@ export function readWavPcm(bytes: Uint8Array): Float32Array {
   }
   if (!pcm) throw new Error("wav has no PCM data");
   return pcm;
+}
+
+export function slicePcm(
+  pcm: Float32Array,
+  range: TranscribeRange,
+  sampleRate = WHISPER_SAMPLE_RATE
+): Float32Array {
+  const start = Math.max(0, Math.min(pcm.length, Math.round(range.startSec * sampleRate)));
+  const end = Math.max(start, Math.min(pcm.length, Math.round(range.endSec * sampleRate)));
+  return pcm.subarray(start, end);
+}
+
+export function shiftCues(cues: readonly SubtitleCue[], offsetSec: number): SubtitleCue[] {
+  if (offsetSec === 0) return cues.map((cue) => ({ ...cue }));
+  return cues.map((cue) => ({
+    start: cue.start + offsetSec,
+    end: cue.end + offsetSec,
+    text: cue.text
+  }));
 }
 
 export function pcmWindows(

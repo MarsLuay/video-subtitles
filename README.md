@@ -13,7 +13,7 @@ Obsidian plugin. While a vault video is playing, the player **more options** con
 
 **Off** hides captions. It does not delete the stored track.
 
-**Settings → Video Subtitles** keeps the downloaded transcriber by default so Create does not fetch it every time. You can change Whisper accuracy, language, translate to English, word timestamps, and diarization. The first desktop start picks an accuracy from this computer.
+**Settings → Video Subtitles** keeps the downloaded transcriber by default so Create does not fetch it every time. You can change Whisper accuracy, language, translate to English, word timestamps, and diarization. Turn on **Choose Create range** to pick a start and end time when you press Create; off by default transcribes the whole video. The first desktop start picks an accuracy from this computer.
 
 ## Setup
 
@@ -34,7 +34,7 @@ Enable **Video Subtitles** in **Settings → Community plugins**, then reload Ob
 
 - Works with Obsidian video files: `mp4`, `webm`, `ogv`, `mov`, `mkv`.
 - Captions overlay in Obsidian. Other apps will not show this stored track.
-- **Create** downloads a local transcriber (Whisper + optional ffmpeg) into the plugin folder, then deletes it after use unless **Keep transcriber** is on. If Create stops early, finished windows are already stored as **generated** and usable. Create again on the same video continues from there unless the file or transcriber settings changed.
+- **Create** downloads a local transcriber (Whisper + optional ffmpeg) into the plugin folder, then deletes it after use unless **Keep transcriber** is on. If Create stops early, finished windows are already stored as **generated** and usable. Create again on the same video continues from there unless the file, range, or transcriber settings changed.
 - Disable the plugin to return to the native player.
 
 ## License

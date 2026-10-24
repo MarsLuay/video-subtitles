@@ -6,6 +6,8 @@ import {
   pcmWindows,
   readWavPcm,
   resampleLinear,
+  shiftCues,
+  slicePcm,
   WHISPER_SAMPLE_RATE
 } from "../src/transcribe/audio";
 import { ffmpegAsset, FFMPEG_RELEASE } from "../src/transcribe/ffmpeg";
@@ -33,7 +35,14 @@ import {
 } from "../src/transcribe/progress";
 import { labelSpeakers, prefixSpeaker } from "../src/transcribe/diarize";
 import { createResumeJob, parseResumeState, resumeMatches } from "../src/transcribe/resume";
-import { upsertGeneratedTrack } from "../src/subtitles/generatedTrack";
+import {
+  formatClockTime,
+  normalizeTranscribeRange,
+  parseClockTime,
+  parseCreateRange,
+  videoDurationSec
+} from "../src/transcribe/range";
+import { spliceGeneratedTrack, upsertGeneratedTrack } from "../src/subtitles/generatedTrack";
 import { emptyStore } from "../src/subtitles/store";
 import { VideoSubtitlesSettingTab, type SettingsHost } from "../src/settingsTab";
 import {
@@ -85,6 +94,7 @@ describe("subtitle settings", () => {
     expect(DEFAULT_SETTINGS.transcriberLanguage).toBe("auto");
     expect(DEFAULT_SETTINGS.translateToEnglish).toBe(false);
     expect(DEFAULT_SETTINGS.wordTimestamps).toBe(false);
+    expect(DEFAULT_SETTINGS.chooseCreateRange).toBe(false);
     expect(mergeSettings(undefined).keepTranscriber).toBe(true);
     expect(mergeSettings({ keepTranscriber: false }).keepTranscriber).toBe(false);
     expect(mergeSettings({ transcriberAccuracy: "large", accuracyInitialized: true })).toEqual({
@@ -95,8 +105,10 @@ describe("subtitle settings", () => {
       translateToEnglish: false,
       wordTimestamps: false,
       diarization: false,
-      maxSpeakers: 2
+      maxSpeakers: 2,
+      chooseCreateRange: false
     });
+    expect(mergeSettings({ chooseCreateRange: true }).chooseCreateRange).toBe(true);
     expect(mergeSettings({ transcriberAccuracy: "nope" }).transcriberAccuracy).toBe("base");
     expect(mergeSettings({ diarization: true, maxSpeakers: 3, transcriberLanguage: "fr" })).toMatchObject({
       diarization: true,
@@ -137,6 +149,7 @@ describe("subtitle settings", () => {
     const tab = new VideoSubtitlesSettingTab(host.app, host);
     expect(tab.getSettingDefinitions().map((def) => def.name)).toEqual([
       "Keep transcriber",
+      "Choose Create range",
       "Transcriber accuracy",
       "Language",
       "Translate to English",
@@ -173,7 +186,8 @@ describe("create resume", () => {
       videoPath: "/vault/clip.mp4",
       pcmLength: 48_000,
       windowCount: 4,
-      settings: DEFAULT_SETTINGS
+      settings: DEFAULT_SETTINGS,
+      range: null
     });
     const saved = {
       ...job,
@@ -195,12 +209,26 @@ describe("create resume", () => {
         job
       )
     ).toBe(true);
+    const legacy = { ...saved, version: 2 };
+    delete (legacy as { rangeStartMs?: number }).rangeStartMs;
+    delete (legacy as { rangeEndMs?: number }).rangeEndMs;
+    expect(resumeMatches(legacy, job)).toBe(true);
     expect(resumeMatches({ ...saved, transcriberAccuracy: "tiny" }, job)).toBe(false);
     expect(resumeMatches({ ...saved, transcriberLanguage: "fr" }, job)).toBe(false);
     expect(resumeMatches({ ...saved, pcmLength: 16 }, job)).toBe(false);
     expect(resumeMatches({ ...saved, nextWindow: 5 }, job)).toBe(false);
     expect(resumeMatches({ ...saved, nextWindow: 4 }, job)).toBe(true);
     expect(parseResumeState({ ...saved, cues: [{ start: 0 }] })).toBeNull();
+    const ranged = createResumeJob({
+      videoPath: "/vault/clip.mp4",
+      pcmLength: 48_000,
+      windowCount: 4,
+      settings: DEFAULT_SETTINGS,
+      range: { startSec: 10, endSec: 20 }
+    });
+    expect(resumeMatches({ ...ranged, nextWindow: 0, cues: [], fallback: "" }, job)).toBe(false);
+    expect(ranged.rangeStartMs).toBe(10_000);
+    expect(ranged.rangeEndMs).toBe(20_000);
   });
 });
 
@@ -226,6 +254,18 @@ describe("generated track", () => {
     expect(second.tracks).toHaveLength(1);
     expect(second.tracks[0]?.id).toBe(first.tracks[0]?.id);
     expect(second.tracks[0]?.cues).toEqual([{ start: 0, end: 2, text: "two" }]);
+    const mixed = upsertGeneratedTrack(emptyStore(), [
+      { start: 0, end: 5, text: "keep" },
+      { start: 10, end: 20, text: "replace" },
+      { start: 30, end: 40, text: "after" }
+    ]);
+    expect(
+      spliceGeneratedTrack(mixed, [{ start: 10, end: 15, text: "new" }], { startSec: 10, endSec: 20 }).tracks[0]?.cues
+    ).toEqual([
+      { start: 0, end: 5, text: "keep" },
+      { start: 10, end: 15, text: "new" },
+      { start: 30, end: 40, text: "after" }
+    ]);
   });
 });
 
@@ -341,5 +381,28 @@ describe("audio helpers", () => {
       { start: 0, end: 30, text: "a" },
       { start: 30, end: 50, text: "b" }
     ]);
+    const ranged = new Float32Array(WHISPER_SAMPLE_RATE * 4);
+    ranged[WHISPER_SAMPLE_RATE] = 1;
+    const sliced = slicePcm(ranged, { startSec: 1, endSec: 3 });
+    expect(sliced.length).toBe(WHISPER_SAMPLE_RATE * 2);
+    expect(sliced[0]).toBe(1);
+    expect(shiftCues([{ start: 0, end: 0.5, text: "hi" }], 10)).toEqual([{ start: 10, end: 10.5, text: "hi" }]);
+  });
+});
+
+describe("create range", () => {
+  it("parses clock times and only accepts a start before the end", () => {
+    expect(parseClockTime("1:30")).toBe(90);
+    expect(parseClockTime("01:02:03")).toBe(3723);
+    expect(parseClockTime("90")).toBe(90);
+    expect(parseClockTime("1:60")).toBeNull();
+    expect(formatClockTime(90)).toBe("1:30");
+    expect(formatClockTime(3723)).toBe("1:02:03");
+    expect(videoDurationSec(Number.NaN)).toBeNull();
+    expect(normalizeTranscribeRange(10, 20, 60)).toEqual({ startSec: 10, endSec: 20 });
+    expect(normalizeTranscribeRange(20, 10, 60)).toBeNull();
+    expect(normalizeTranscribeRange(0, 0.2, 60)).toBeNull();
+    expect(parseCreateRange("0:10", "0:20", 60)).toEqual({ startSec: 10, endSec: 20 });
+    expect(parseCreateRange("nope", "0:20", 60)).toBeNull();
   });
 });
