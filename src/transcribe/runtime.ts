@@ -65,6 +65,20 @@ export function cleanupTranscriber(root: string, keep: boolean): void {
   removePath(path.join(root, "tmp"));
 }
 
+export function shouldRemoveTranscriberOnUnload(appQuitting: boolean): boolean {
+  return !appQuitting;
+}
+
+export function removeInstalledTranscriber(plugin: Plugin): void {
+  try {
+    const root = transcriberRoot(plugin);
+    cleanupTranscriber(root, false);
+    clearCreateResume(plugin);
+  } catch {
+    /* plugin folder may already be gone */
+  }
+}
+
 export function vaultFileAbsPath(plugin: Plugin, file: TFile): string {
   const adapter = plugin.app.vault.adapter;
   if (!(adapter instanceof FileSystemAdapter)) {

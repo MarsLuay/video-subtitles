@@ -35,7 +35,7 @@ Enable **Video Subtitles** in **Settings → Community plugins**, then reload Ob
 - Works with Obsidian video files: `mp4`, `webm`, `ogv`, `mov`, `mkv`.
 - Captions overlay in Obsidian. Other apps will not show this stored track.
 - **Create** downloads a local transcriber (Whisper + optional ffmpeg) into the plugin folder, then deletes it after use unless **Keep transcriber** is on. If Create stops early, finished windows are already stored as **generated** and usable. Create again on the same video continues from there unless the file, range, or transcriber settings changed.
-- Disable the plugin to return to the native player.
+- Disable the plugin to return to the native player. Turning it off or uninstalling also deletes the downloaded Whisper transcriber.
 
 ## License
 

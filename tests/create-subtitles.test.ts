@@ -20,7 +20,7 @@ import {
   transcriberLibFiles
 } from "../src/transcribe/lib";
 import { whisperModelId } from "../src/transcribe/models";
-import { transcriberCleanupPath } from "../src/transcribe/runtime";
+import { shouldRemoveTranscriberOnUnload, transcriberCleanupPath } from "../src/transcribe/runtime";
 import {
   formatCreateProgress,
   formatRemaining,
@@ -347,6 +347,8 @@ describe("transcriber runtime files", () => {
   it("deletes the whole transcriber unless keep is on", () => {
     expect(transcriberCleanupPath("/plugin/transcriber", false)).toBe("/plugin/transcriber");
     expect(transcriberCleanupPath("/plugin/transcriber/", true)).toBe("/plugin/transcriber/tmp");
+    expect(shouldRemoveTranscriberOnUnload(false)).toBe(true);
+    expect(shouldRemoveTranscriberOnUnload(true)).toBe(false);
   });
 });
 
