@@ -1,4 +1,4 @@
-import { Notice, Platform, TFile, type Plugin } from "obsidian";
+import { Menu, Notice, Platform, TFile, type Plugin } from "obsidian";
 import { upsertGeneratedTrack } from "../subtitles/generatedTrack";
 import { cleanupTranscriber, transcriberRoot, transcribeVideoFile, vaultFileAbsPath } from "../transcribe/runtime";
 import { pickAccuracyForHardware } from "../transcribe/hardware";
@@ -7,7 +7,7 @@ import { showCreateProgressNotice } from "../ui/createProgressNotice";
 import type { VideoSubtitleSettings } from "../settings";
 import { resolveVideoFile } from "./resolveVideoFile";
 import { renderCueOverlay } from "../ui/captionOverlay";
-import { openOverflowMenu } from "../ui/overflowMenu";
+import { toggleOverflowMenu } from "../ui/overflowMenu";
 import { DEBUG_SHOW_OVERFLOW_HIT, measureOverflowHit } from "../ui/overflowButton";
 import { pickSubtitleFile } from "../ui/pickSubtitleFile";
 import { parseSubtitle } from "../subtitles/parseSubtitle";
@@ -47,6 +47,7 @@ class VideoSession {
   private readonly cuesEl: HTMLElement;
   private readonly onTime = (): void => this.paintCues();
   private persistQueue: Promise<void> = Promise.resolve();
+  private menu: Menu | null = null;
 
   constructor(
     private readonly plugin: VideoSubtitlesHost,
@@ -98,6 +99,8 @@ class VideoSession {
   }
 
   destroy(): void {
+    this.menu?.hide();
+    this.menu = null;
     this.player.win.clearTimeout(this.idleTimer);
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
@@ -157,7 +160,7 @@ class VideoSession {
   };
 
   private openMenu(event: MouseEvent): void {
-    openOverflowMenu({
+    const menu = toggleOverflowMenu(this.menu, {
       event,
       tracks: this.store.tracks,
       activeTrackId: this.store.activeTrackId,
@@ -192,6 +195,10 @@ class VideoSession {
       onImport: () => {
         void this.importTrack();
       }
+    });
+    this.menu = menu;
+    menu?.onHide(() => {
+      if (this.menu === menu) this.menu = null;
     });
   }
 

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { Menu } from "obsidian";
 import { buildSubtitleMenuRows, playbackSpeedLabel } from "../src/ui/menuModel";
+import { toggleOverflowMenu } from "../src/ui/overflowMenu";
 import { DEBUG_SHOW_OVERFLOW_HIT, isOverflowButtonHit, measureOverflowHit, overflowControlsVisible } from "../src/ui/overflowButton";
 
 describe("player overflow 3-dot", () => {
@@ -136,3 +138,29 @@ describe("buildSubtitleMenuRows", () => {
     expect(rows[5]).toEqual({ kind: "track", id: "sub-1", label: "lecture", checked: true });
   });
 });
+
+describe("toggleOverflowMenu", () => {
+  it("hides the open menu instead of opening another", () => {
+    const open = new Menu();
+    expect(toggleOverflowMenu(open, dummyMenuOptions())).toBeNull();
+    expect((open as Menu & { hidden: boolean }).hidden).toBe(true);
+  });
+});
+
+function dummyMenuOptions(): Parameters<typeof toggleOverflowMenu>[1] {
+  const event = new MouseEvent("click", { clientX: 10, clientY: 10 });
+  Object.defineProperty(event, "target", { value: document.body });
+  return {
+    event,
+    tracks: [],
+    activeTrackId: null,
+    playbackRate: 1,
+    onDownload: () => undefined,
+    onRate: () => undefined,
+    onPip: () => undefined,
+    onOff: () => undefined,
+    onSelectTrack: () => undefined,
+    onCreate: () => undefined,
+    onImport: () => undefined
+  };
+}

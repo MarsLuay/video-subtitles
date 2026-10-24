@@ -14,7 +14,7 @@ export function openOverflowMenu(options: {
   onSelectTrack: (id: string) => void;
   onCreate: () => void;
   onImport: () => void;
-}): void {
+}): Menu {
   const menu = new Menu();
   menu.setUseNativeMenu(false);
   for (const row of buildSubtitleMenuRows({
@@ -81,4 +81,16 @@ export function openOverflowMenu(options: {
     ? options.event.target.ownerDocument
     : options.event.view?.document) ?? undefined;
   menu.showAtPosition({ x: options.event.clientX, y: options.event.clientY }, doc);
+  return menu;
+}
+
+export function toggleOverflowMenu(
+  current: Menu | null,
+  options: Parameters<typeof openOverflowMenu>[0]
+): Menu | null {
+  if (current) {
+    current.hide();
+    return null;
+  }
+  return openOverflowMenu(options);
 }

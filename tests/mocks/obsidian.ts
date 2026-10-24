@@ -84,6 +84,7 @@ export class Setting {
 }
 
 export class Menu {
+  hidden = false;
   addItem(cb: (item: MenuItem) => void): this {
     cb(new MenuItem());
     return this;
@@ -91,8 +92,20 @@ export class Menu {
   addSeparator(): this {
     return this;
   }
+  setUseNativeMenu(_useNative: boolean): this {
+    return this;
+  }
   showAtMouseEvent(_event: MouseEvent): void {}
   showAtPosition(_position: { x: number; y: number }): void {}
+  hide(): this {
+    this.hidden = true;
+    this.hideCallback?.();
+    return this;
+  }
+  onHide(callback: () => unknown): void {
+    this.hideCallback = callback;
+  }
+  private hideCallback?: () => unknown;
 }
 
 export class MenuItem {
