@@ -1,11 +1,11 @@
 # Video Subtitles
 
-Obsidian plugin. While a vault video tab is open, the pane **more options** control (three dots) includes subtitle rows.
+Obsidian plugin. While a vault video is playing, the player **more options** control (three dots next to Download / Playback speed / Picture in picture) includes subtitle rows.
 
 ## What it does
 
-1. Open a video file in Obsidian.
-2. Click **more options** in the pane header.
+1. Open a video in Obsidian.
+2. Click the player **more options** 3-dot (same menu as Download, Playback speed, Picture in picture).
 3. Choose **Off** or **Import**.
 4. Import an `.srt` or `.vtt` file.
 5. Open **more options** again: the imported name is listed. Select it to show captions on the video.

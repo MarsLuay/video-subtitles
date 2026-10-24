@@ -1,12 +1,12 @@
 # Video Subtitles
 
-Import a subtitle file from the video more-options menu and keep that track inside the video file.
+Import a subtitle file from the video player's overflow 3-dot and keep that track inside the video file.
 
 ## Language
 
 **More options**:
-The pane three-dot control that opens `onPaneMenu` / `file-menu` with source `more-options`.
-_Avoid_: overlay button, Chromium overflow, kebab
+The native player 3-dot (`::-webkit-media-controls-overflow-button`) that already holds Download, Playback speed, and Picture in picture.
+_Avoid_: pane header more-options, fake overlay icon, kebab
 
 **Off**:
 The menu row that hides captions without deleting the stored track.

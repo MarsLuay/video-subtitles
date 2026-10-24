@@ -11,6 +11,11 @@
   max-width: 100%;
 }
 
+/* Keep the native 3-dot. Disable its closed-shadow list so this plugin can fill it. */
+.video-subtitles-host video::-webkit-media-controls-overflow-button {
+  pointer-events: none;
+}
+
 .video-subtitles-cues {
   position: absolute;
   right: 8%;

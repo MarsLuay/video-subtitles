@@ -4,8 +4,8 @@
 - Status: PASS
 - Gate kind: feature
 - Prerequisite: G0 PASS
-- Tested scope: menu model and Obsidian video extension list
-- In-scope claims: empty menu is Off + Import; overlay replaces native overflow clicks
+- Tested scope: menu model and overflow-button hit region
+- In-scope claims: player overflow list is Download, Playback speed, Picture in picture, then Off and Import
 - Unproven: live click on a running Obsidian window
 - Scope decision for next gate: allowed
 
@@ -15,12 +15,13 @@
 ## Result matrix
 | Requirement / row | Baseline | Candidate | Correctness | Classification |
 | --- | --- | --- | --- | --- |
-| R1-more-options-menu | native Chromium overflow only | Off then Import with no tracks | unit tests | PASS |
+| R1-more-options-menu | native Chromium overflow | Download / Playback speed / PiP then Off / Import | unit tests | PASS |
+| Overflow hit | bottom-right control bar | steal only while controls visible | unit tests | PASS |
 | Video extensions | Obsidian Ex | mp4/webm/ogv/mov/mkv | unit tests | PASS |
 
 ## Safety and rollback
 - Native play/seek/volume stay. Disable plugin to restore native overflow.
 
 ## Final classification
-- Verdict: PASS — more-options subtitle chrome is Off and Import
+- Verdict: PASS — player overflow 3-dot holds native actions plus Off and Import
 - Next eligible gate: G2

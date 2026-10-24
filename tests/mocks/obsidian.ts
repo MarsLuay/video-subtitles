@@ -43,6 +43,9 @@ export class MenuItem {
   setSection(_section: string): this {
     return this;
   }
+  setSubmenu(): Menu {
+    return new Menu();
+  }
   onClick(_cb: () => void): this {
     return this;
   }

@@ -1,8 +1,8 @@
-import { Menu, Notice, TFile, type App, type Plugin, type TAbstractFile, type WorkspaceLeaf } from "obsidian";
+import { Notice, TFile, type App, type Plugin } from "obsidian";
 import { resolveVideoFile } from "./resolveVideoFile";
 import { renderCueOverlay } from "../ui/captionOverlay";
-import { addSubtitleMenuItems } from "../ui/overflowMenu";
-import { isNativeSubtitleMenu } from "../ui/menuModel";
+import { openOverflowMenu } from "../ui/overflowMenu";
+import { isOverflowButtonHit, overflowControlsVisible } from "../ui/overflowButton";
 import { pickSubtitleFile } from "../ui/pickSubtitleFile";
 import { parseSubtitle } from "../subtitles/parseSubtitle";
 import { labelFromFilename } from "../subtitles/cues";
@@ -15,11 +15,11 @@ import {
   type SubtitleTrack
 } from "../subtitles/store";
 import { toArrayBuffer } from "../subtitles/absorb/bytes";
-import { isVideoExtension } from "../videoFileTypes";
 
 class VideoSession {
   private store: AbsorbedStore = emptyStore();
   private file: TFile | null = null;
+  private hovering = false;
   private readonly host: HTMLElement;
   private readonly cuesEl: HTMLElement;
   private readonly onTime = (): void => this.paintCues();
@@ -37,14 +37,11 @@ class VideoSession {
     this.video.addEventListener("timeupdate", this.onTime);
     this.video.addEventListener("seeked", this.onTime);
     this.video.addEventListener("loadedmetadata", this.onTime);
-  }
-
-  get filePath(): string | null {
-    return this.file?.path ?? null;
-  }
-
-  menuState(): { tracks: SubtitleTrack[]; activeTrackId: string | null } {
-    return { tracks: this.store.tracks, activeTrackId: this.store.activeTrackId };
+    this.video.addEventListener("mouseenter", this.onMouseEnter);
+    this.video.addEventListener("mouseleave", this.onMouseLeave);
+    this.video.addEventListener("pointerdown", this.onOverflowPointer, true);
+    this.video.addEventListener("mousedown", this.onOverflowPointer, true);
+    this.video.addEventListener("click", this.onOverflowPointer, true);
   }
 
   async bind(): Promise<void> {
@@ -66,27 +63,91 @@ class VideoSession {
     this.video.removeEventListener("timeupdate", this.onTime);
     this.video.removeEventListener("seeked", this.onTime);
     this.video.removeEventListener("loadedmetadata", this.onTime);
+    this.video.removeEventListener("mouseenter", this.onMouseEnter);
+    this.video.removeEventListener("mouseleave", this.onMouseLeave);
+    this.video.removeEventListener("pointerdown", this.onOverflowPointer, true);
+    this.video.removeEventListener("mousedown", this.onOverflowPointer, true);
+    this.video.removeEventListener("click", this.onOverflowPointer, true);
     this.cuesEl.detach();
     this.host.removeClass("video-subtitles-host");
   }
 
-  ownerDocument(): Document {
-    return this.video.ownerDocument;
+  private readonly onMouseEnter = (): void => {
+    this.hovering = true;
+  };
+
+  private readonly onMouseLeave = (): void => {
+    this.hovering = false;
+  };
+
+  private readonly onOverflowPointer = (event: Event): void => {
+    if (!(event instanceof MouseEvent) || event.button !== 0) return;
+    if (!overflowControlsVisible(this.video.paused, this.hovering)) return;
+    if (!isOverflowButtonHit(this.video.getBoundingClientRect(), event.clientX, event.clientY)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (event.type === "click") this.openMenu(event);
+  };
+
+  private openMenu(event: MouseEvent): void {
+    openOverflowMenu({
+      event,
+      tracks: this.store.tracks,
+      activeTrackId: this.store.activeTrackId,
+      playbackRate: this.video.playbackRate,
+      onDownload: () => {
+        void this.downloadVideo();
+      },
+      onRate: (rate) => {
+        this.video.playbackRate = rate;
+      },
+      onPip: () => {
+        const doc = this.video.ownerDocument;
+        if (this.video !== doc.pictureInPictureElement) {
+          void this.video.requestPictureInPicture?.();
+        } else {
+          void doc.exitPictureInPicture?.();
+        }
+      },
+      onOff: () => {
+        this.store = { ...this.store, activeTrackId: null };
+        this.paintCues();
+        if (this.store.tracks.length > 0) void this.persist();
+      },
+      onSelectTrack: (id) => {
+        this.store = { ...this.store, activeTrackId: id };
+        this.paintCues();
+        void this.persist();
+      },
+      onImport: () => {
+        void this.importTrack();
+      }
+    });
   }
 
-  setOff(): void {
-    this.store = { ...this.store, activeTrackId: null };
-    this.paintCues();
-    if (this.store.tracks.length > 0) void this.persist();
+  private async downloadVideo(): Promise<void> {
+    this.file = resolveVideoFile(this.app, this.video) ?? this.file;
+    if (!(this.file instanceof TFile)) {
+      new Notice("Open the video file to download it.");
+      return;
+    }
+    const file = this.file;
+    try {
+      const data = await this.app.vault.readBinary(file);
+      const url = URL.createObjectURL(new Blob([data]));
+      const link = this.video.ownerDocument.body.createEl("a", {
+        attr: { href: url, download: file.name }
+      });
+      link.click();
+      link.detach();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error(error);
+      new Notice("Could not download the video.");
+    }
   }
 
-  selectTrack(id: string): void {
-    this.store = { ...this.store, activeTrackId: id };
-    this.paintCues();
-    void this.persist();
-  }
-
-  async importTrack(): Promise<void> {
+  private async importTrack(): Promise<void> {
     const picked = await pickSubtitleFile(this.video.ownerDocument);
     if (!picked) return;
     const parsed = parseSubtitle(picked.text, picked.name);
@@ -183,75 +244,7 @@ export class VideoSurfaceManager {
     this.plugin.register(() => this.dispose());
     this.plugin.registerEvent(workspace.on("layout-change", () => this.scheduleScan()));
     this.plugin.registerEvent(workspace.on("file-open", () => this.scheduleScan()));
-    this.plugin.registerEvent(workspace.on("file-menu", (menu, file, source, leaf) => {
-      this.populateNativeMenu(menu, file, source, leaf);
-    }));
     this.scan();
-  }
-
-  populateNativeMenu(menu: Menu, file: TAbstractFile, source: string, leaf?: WorkspaceLeaf): void {
-    if (!isNativeSubtitleMenu(source)) return;
-    if (!(file instanceof TFile) || !isVideoExtension(file.extension)) return;
-    const session = this.sessionForFile(file) ?? this.sessionForLeaf(leaf);
-    const state = session?.menuState() ?? { tracks: [], activeTrackId: null };
-    addSubtitleMenuItems(menu, {
-      tracks: state.tracks,
-      activeTrackId: state.activeTrackId,
-      onOff: () => session?.setOff(),
-      onSelectTrack: (id) => session?.selectTrack(id),
-      onImport: () => {
-        void this.importFromMenu(file, session, leaf);
-      }
-    });
-  }
-
-  private sessionForFile(file: TFile): VideoSession | null {
-    for (const session of this.sessions.values()) {
-      if (session.filePath === file.path) return session;
-    }
-    return null;
-  }
-
-  private sessionForLeaf(leaf?: WorkspaceLeaf): VideoSession | null {
-    const video = leaf?.view.containerEl.querySelector("video");
-    return video ? this.sessions.get(video) ?? null : null;
-  }
-
-  private async importFromMenu(file: TFile, session: VideoSession | null, leaf?: WorkspaceLeaf): Promise<void> {
-    if (session) {
-      await session.importTrack();
-      return;
-    }
-    const doc = leaf?.view.containerEl.doc ?? this.plugin.app.workspace.containerEl.doc;
-    const picked = await pickSubtitleFile(doc);
-    if (!picked) return;
-    const parsed = parseSubtitle(picked.text, picked.name);
-    if (parsed.cues.length === 0) {
-      new Notice("That file has no subtitle cues.");
-      return;
-    }
-    const original = new Uint8Array(await this.plugin.app.vault.readBinary(file));
-    const store = loadStoreFromVideo(original);
-    store.tracks.push({
-      id: newTrackId(),
-      label: labelFromFilename(picked.name),
-      language: "",
-      cues: parsed.cues
-    });
-    const added = store.tracks[store.tracks.length - 1];
-    if (added) store.activeTrackId = added.id;
-    try {
-      await this.plugin.app.vault.modifyBinary(file, toArrayBuffer(saveStoreToVideo(original, store)));
-      new Notice(`Imported ${labelFromFilename(picked.name)} into the video.`);
-    } catch (error) {
-      try {
-        await this.plugin.app.vault.modifyBinary(file, toArrayBuffer(original));
-      } catch {
-        // Original bytes already on disk.
-      }
-      console.error(error);
-      new Notice("Could not store subtitles inside the video.");
-    }
   }
 
   private scheduleScan(): void {
