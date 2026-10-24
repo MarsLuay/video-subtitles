@@ -261,13 +261,23 @@ export async function transcribePcm(
         end: cue.end + part.offsetSec,
         text: cue.text
       }));
-      appendWindowCues(cues, shifted);
-      if (shifted.length === 0) {
+      if (shifted.length > 0) {
+        appendWindowCues(cues, shifted);
+      } else {
         const text = (result.text ?? "").replace(/\s+/g, " ").trim();
-        if (text) fallback = fallback ? `${fallback} ${text}` : text;
+        if (text) {
+          fallback = fallback ? `${fallback} ${text}` : text;
+          appendWindowCues(cues, [
+            {
+              start: part.offsetSec,
+              end: Math.max(part.offsetSec + 0.5, part.offsetSec + part.samples.length / 16_000),
+              text
+            }
+          ]);
+        }
       }
       try {
-        resume.onCheckpoint?.({
+        await resume.onCheckpoint?.({
           nextWindow: index + 1,
           cues: cues.map((cue) => ({ ...cue })),
           fallback

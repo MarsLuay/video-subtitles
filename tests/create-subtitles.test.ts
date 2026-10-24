@@ -169,8 +169,6 @@ describe("create resume", () => {
   it("resumes the same video and transcriber settings, and starts over if those changed", () => {
     const job = createResumeJob({
       videoPath: "/vault/clip.mp4",
-      size: 4096,
-      mtimeMs: 1700000000000,
       pcmLength: 48_000,
       windowCount: 4,
       settings: DEFAULT_SETTINGS
@@ -183,9 +181,21 @@ describe("create resume", () => {
     };
     expect(resumeMatches(saved, job)).toBe(true);
     expect(parseResumeState(saved)?.nextWindow).toBe(2);
+    expect(resumeMatches({ ...saved, size: 8, mtimeMs: 1 }, job)).toBe(true);
+    expect(
+      resumeMatches(
+        {
+          ...saved,
+          version: 1,
+          size: 4096,
+          mtimeMs: 1700000000000
+        },
+        job
+      )
+    ).toBe(true);
     expect(resumeMatches({ ...saved, transcriberAccuracy: "tiny" }, job)).toBe(false);
     expect(resumeMatches({ ...saved, transcriberLanguage: "fr" }, job)).toBe(false);
-    expect(resumeMatches({ ...saved, size: 8 }, job)).toBe(false);
+    expect(resumeMatches({ ...saved, pcmLength: 16 }, job)).toBe(false);
     expect(resumeMatches({ ...saved, nextWindow: 5 }, job)).toBe(false);
     expect(resumeMatches({ ...saved, nextWindow: 4 }, job)).toBe(true);
     expect(parseResumeState({ ...saved, cues: [{ start: 0 }] })).toBeNull();

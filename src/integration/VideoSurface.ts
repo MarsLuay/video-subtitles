@@ -1,5 +1,5 @@
 import { Menu, Notice, Platform, TFile, type Plugin } from "obsidian";
-import { upsertGeneratedTrack } from "../subtitles/generatedTrack";
+import { isGeneratedTrack, upsertGeneratedTrack } from "../subtitles/generatedTrack";
 import { cleanupTranscriber, clearCreateResume, transcriberRoot, transcribeVideoFile, vaultFileAbsPath } from "../transcribe/runtime";
 import { pickAccuracyForHardware } from "../transcribe/hardware";
 import { readHardware } from "../transcribe/node";
@@ -11,7 +11,7 @@ import { toggleOverflowMenu } from "../ui/overflowMenu";
 import { DEBUG_SHOW_OVERFLOW_HIT, measureOverflowHit } from "../ui/overflowButton";
 import { pickSubtitleFile } from "../ui/pickSubtitleFile";
 import { parseSubtitle } from "../subtitles/parseSubtitle";
-import { labelFromFilename } from "../subtitles/cues";
+import { labelFromFilename, type SubtitleCue } from "../subtitles/cues";
 import { newTrackId } from "../subtitles/id";
 import {
   emptyStore,
@@ -290,7 +290,10 @@ class VideoSession {
         vaultFileAbsPath(this.plugin, file),
         this.plugin.subtitleSettings,
         win,
-        status.setPercent
+        status.setPercent,
+        async (partial) => {
+          await this.applyGeneratedCues(partial, false);
+        }
       );
       if (cues.length === 0) {
         status.hide();
@@ -298,10 +301,8 @@ class VideoSession {
         new Notice("The transcriber returned no speech.");
         return;
       }
-      this.store = upsertGeneratedTrack(this.store, cues);
-      this.paintCues();
       status.setPercent(98);
-      const saved = await this.persist();
+      const saved = await this.applyGeneratedCues(cues, true);
       status.hide();
       if (saved) {
         clearCreateResume(this.plugin);
@@ -310,10 +311,19 @@ class VideoSession {
     } catch (error) {
       console.error(formatError(error));
       status.hide();
-      const message = error instanceof Error && error.message ? error.message : "Could not create subtitles.";
-      new Notice(message);
+      if (this.hasGeneratedCues()) {
+        new Notice("Saved generated subtitles so far. Create again to continue.");
+      } else {
+        const message = error instanceof Error && error.message ? error.message : "Could not create subtitles.";
+        new Notice(message);
+      }
     } finally {
       this.creating = false;
+      try {
+        await this.persistQueue;
+      } catch {
+        /* keep going */
+      }
       if (root) {
         try {
           cleanupTranscriber(root, keep);
@@ -330,28 +340,40 @@ class VideoSession {
   }
 
   private paintCues(): void {
+    if (!this.cuesEl.isConnected) return;
     const track = this.activeTrack();
     renderCueOverlay(this.cuesEl, track?.cues ?? [], this.video.currentTime);
   }
 
-  private persist(): Promise<boolean> {
-    const run = this.persistQueue.then(() => this.writeStore());
+  private hasGeneratedCues(): boolean {
+    return this.store.tracks.some((track) => isGeneratedTrack(track) && track.cues.length > 0);
+  }
+
+  private async applyGeneratedCues(cues: readonly SubtitleCue[], reload: boolean): Promise<boolean> {
+    if (cues.length === 0) return false;
+    this.store = upsertGeneratedTrack(this.store, cues);
+    this.paintCues();
+    return this.persist(reload);
+  }
+
+  private persist(reload = true): Promise<boolean> {
+    const run = this.persistQueue.then(() => this.writeStore(reload));
     this.persistQueue = run.then(() => undefined, () => undefined);
     return run;
   }
 
-  private async writeStore(): Promise<boolean> {
+  private async writeStore(reload: boolean): Promise<boolean> {
     this.file = resolveVideoFile(this.plugin.app, this.video) ?? this.file;
     if (!(this.file instanceof TFile)) {
-      new Notice("Imported for this session. Open the video file to store subtitles inside it.");
+      if (reload) new Notice("Imported for this session. Open the video file to store subtitles inside it.");
       return false;
     }
     const file = this.file;
-      const original = new Uint8Array(await this.plugin.app.vault.readBinary(file));
+    const original = new Uint8Array(await this.plugin.app.vault.readBinary(file));
     try {
       const next = saveStoreToVideo(original, this.store);
       await this.plugin.app.vault.modifyBinary(file, toArrayBuffer(next));
-      this.reloadSrc(file);
+      if (reload) this.reloadSrc(file);
       return true;
     } catch (error) {
       try {
@@ -360,7 +382,7 @@ class VideoSession {
         // Keep going; playback still has the in-memory track.
       }
       console.error(formatError(error));
-      new Notice("Could not store subtitles inside the video. The track still works until you close it.");
+      if (reload) new Notice("Could not store subtitles inside the video. The track still works until you close it.");
       return false;
     }
   }

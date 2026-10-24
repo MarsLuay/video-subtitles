@@ -92,7 +92,8 @@ export async function transcribeVideoFile(
   videoPath: string,
   settings: CreateTranscribeSettings,
   win: Window,
-  onProgress?: CreateProgressFn
+  onProgress?: CreateProgressFn,
+  onPartialCues?: (cues: readonly SubtitleCue[]) => void | Promise<void>
 ): Promise<SubtitleCue[]> {
   const fs = nodeRequire<typeof import("fs")>("fs");
   const path = nodeRequire<typeof import("path")>("path");
@@ -123,14 +124,19 @@ export async function transcribeVideoFile(
   const resumeFile = createResumePath(plugin);
   const job = createResumeJob({
     videoPath,
-    size,
-    mtimeMs: fs.statSync(videoPath).mtimeMs,
     pcmLength: pcm.length,
     windowCount: pcmWindows(pcm).length,
     settings
   });
   const saved = readCreateResume(resumeFile);
   const resume = resumeMatches(saved, job) ? saved : null;
+  if (resume && resume.cues.length > 0 && onPartialCues) {
+    try {
+      await onPartialCues(resume.cues);
+    } catch {
+      /* keep transcribing */
+    }
+  }
   try {
     return await transcribePcm(
       pcm,
@@ -143,12 +149,13 @@ export async function transcribeVideoFile(
         startWindow: resume?.nextWindow,
         cues: resume?.cues,
         fallback: resume?.fallback,
-        onCheckpoint: (state) => {
+        onCheckpoint: async (state) => {
           try {
             writeCreateResume(resumeFile, { ...job, ...state });
           } catch {
             /* keep transcribing */
           }
+          if (state.cues.length > 0 && onPartialCues) await onPartialCues(state.cues);
         }
       }
     );
