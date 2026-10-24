@@ -35,10 +35,10 @@ class VideoSession {
     parent.insertBefore(this.player, video);
     this.player.appendChild(video);
     this.cuesEl = this.player.createDiv({ cls: "video-subtitles-cues is-empty" });
-    this.hitEl = this.player.createEl("button", {
+    this.hitEl = this.player.createDiv({
       cls: "video-subtitles-overflow-hit",
       attr: {
-        type: "button",
+        role: "button",
         "aria-label": "More options"
       }
     });
