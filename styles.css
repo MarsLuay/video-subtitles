@@ -123,15 +123,16 @@
   pointer-events: none;
 }
 
-.video-subtitles-overflow-hit.is-debug {
-  opacity: 1;
-  background: rgba(255, 0, 0, 0.4);
-  outline: 1px solid #f00;
-}
-
 .video-subtitles-overflow-hit.is-idle {
   opacity: 0;
   pointer-events: none;
+}
+
+.video-subtitles-overflow-hit.is-debug,
+.video-subtitles-overflow-hit.is-debug.is-idle {
+  opacity: 1;
+  background: rgba(255, 0, 0, 0.4);
+  outline: 1px solid #f00;
 }
 
 .video-subtitles-fullscreen-hit {
