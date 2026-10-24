@@ -7,7 +7,7 @@ export const FALLBACK_OVERFLOW_BUTTON = 48;
 export const OVERFLOW_BUTTON_BOTTOM_INSET = 24;
 
 /** Paint the overflow hit target. Testing only. */
-export const DEBUG_SHOW_OVERFLOW_HIT = true;
+export const DEBUG_SHOW_OVERFLOW_HIT = false;
 
 const OVERFLOW_PSEUDOS = [
   "::-webkit-media-controls-overflow-button",

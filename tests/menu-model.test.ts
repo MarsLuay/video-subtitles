@@ -16,8 +16,8 @@ import {
 import { currentFullscreenElement, fullscreenMenuParent, isPlayerFullscreen } from "../src/ui/fullscreen";
 
 describe("player overflow 3-dot", () => {
-  it("paints the overflow hit box for testing", () => {
-    expect(DEBUG_SHOW_OVERFLOW_HIT).toBe(true);
+  it("keeps the overflow hit box invisible", () => {
+    expect(DEBUG_SHOW_OVERFLOW_HIT).toBe(false);
   });
 
   it("hits the native overflow button at the bottom-right of the control bar", () => {
