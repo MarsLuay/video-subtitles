@@ -231,8 +231,8 @@ describe("generated track", () => {
 
 describe("create progress", () => {
   it("formats a monotonic percent and tracks model file downloads", () => {
-    expect(formatCreateProgress(12.4)).toBe("Creating subtitles… 12%");
-    expect(formatCreateProgress(12.4, null, "load")).toBe("Creating subtitles… 12%");
+    expect(formatCreateProgress(12.4)).toBe("Loading transcriber… 12%");
+    expect(formatCreateProgress(12.4, null, "load")).toBe("Loading transcriber… 12%");
     expect(formatCreateProgress(12.4, null, "work")).toBe("Creating subtitles… 12%/100%");
     expect(formatRemaining(45)).toBe("~45s left");
     expect(formatRemaining(180)).toBe("~3 min left");

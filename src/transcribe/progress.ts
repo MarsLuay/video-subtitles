@@ -34,7 +34,8 @@ export function formatCreateProgress(
 ): string {
   const remaining = formatRemaining(remainingSec);
   const done = phase === "work" ? `${clampPercent(percent)}%/100%` : `${clampPercent(percent)}%`;
-  return remaining ? `Creating subtitles… ${done} · ${remaining}` : `Creating subtitles… ${done}`;
+  const label = phase === "work" ? "Creating subtitles" : "Loading transcriber";
+  return remaining ? `${label}… ${done} · ${remaining}` : `${label}… ${done}`;
 }
 
 export function processedDurationSec(
