@@ -1,4 +1,4 @@
-import { Notice, TFile, type App, type Plugin } from "obsidian";
+import { Notice, TFile, setIcon, type App, type Plugin } from "obsidian";
 import { resolveVideoFile } from "./resolveVideoFile";
 import { renderCueOverlay } from "../ui/captionOverlay";
 import { openOverflowMenu } from "../ui/overflowMenu";
@@ -42,6 +42,7 @@ class VideoSession {
         "aria-label": "More options"
       }
     });
+    setIcon(this.hitEl, "lucide-ellipsis-vertical");
     this.video.addEventListener("timeupdate", this.onTime);
     this.video.addEventListener("seeked", this.onTime);
     this.video.addEventListener("loadedmetadata", this.onTime);
