@@ -6,7 +6,15 @@ import { whisperModelId } from "./models";
 import type { SubtitleCue } from "../subtitles/cues";
 import { appendWindowCues, chunksToCues, pcmWindows } from "./audio";
 import { labelSpeakers } from "./diarize";
-import { loadStagePercent, mergeFileProgress, transcribeStagePercent, yieldToTracker, type ProgressEvent } from "./progress";
+import {
+  loadStagePercent,
+  mergeFileProgress,
+  remainingTranscribeSeconds,
+  transcribeStagePercent,
+  yieldToTracker,
+  type CreateProgressFn,
+  type ProgressEvent
+} from "./progress";
 
 export const TRANSFORMERS_VERSION = "4.3.1";
 export const ONNXRUNTIME_WEB_VERSION = "1.31.0-dev.20260914-8d85527a0";
@@ -158,7 +166,7 @@ export async function transcribePcm(
   libDir: string,
   modelsDir: string,
   toUrl: (absPath: string) => string,
-  onProgress?: (percent: number) => void
+  onProgress?: CreateProgressFn
 ): Promise<SubtitleCue[]> {
   const path = nodeRequire<typeof import("path")>("path");
   onProgress?.(18);
@@ -201,11 +209,14 @@ export async function transcribePcm(
   await yieldToTracker();
   const cues: SubtitleCue[] = [];
   let fallback = "";
+  const transcribeStarted = Date.now();
+  let firstWindowMs = 0;
+  let remainingSec: number | null = null;
   try {
     for (let index = 0; index < windows.length; index += 1) {
       const part = windows[index];
       if (!part) continue;
-      onProgress?.(transcribeStagePercent(index, windows.length));
+      onProgress?.(transcribeStagePercent(index, windows.length), remainingSec);
       await yieldToTracker();
       let result: { text?: string; chunks?: { text?: string; timestamp?: [number | null, number | null] }[] };
       try {
@@ -217,6 +228,14 @@ export async function transcribePcm(
         asr = await openAsr();
         result = await asr(new Float32Array(part.samples), generate);
       }
+      if (index === 0) firstWindowMs = Date.now() - transcribeStarted;
+      remainingSec = remainingTranscribeSeconds({
+        completedWindows: index + 1,
+        totalWindows: windows.length,
+        elapsedMs: Date.now() - transcribeStarted,
+        firstWindowMs
+      });
+      onProgress?.(transcribeStagePercent(index + 1, windows.length), remainingSec);
       const shifted = chunksToCues(result.chunks ?? []).map((cue) => ({
         start: cue.start + part.offsetSec,
         end: cue.end + part.offsetSec,

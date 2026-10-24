@@ -4,7 +4,7 @@ import { extractWav, ensureFfmpeg } from "./ffmpeg";
 import { decodeVideoAudio, readWavPcm } from "./audio";
 import { nodeRequire } from "./node";
 import { transcribePcm } from "./lib";
-import { yieldToTracker } from "./progress";
+import { yieldToTracker, type CreateProgressFn } from "./progress";
 import { toArrayBuffer } from "../subtitles/absorb/bytes";
 import type { CreateTranscribeSettings } from "../settings";
 import type { SubtitleCue } from "../subtitles/cues";
@@ -74,7 +74,7 @@ export async function transcribeVideoFile(
   videoPath: string,
   settings: CreateTranscribeSettings,
   win: Window,
-  onProgress?: (percent: number) => void
+  onProgress?: CreateProgressFn
 ): Promise<SubtitleCue[]> {
   const fs = nodeRequire<typeof import("fs")>("fs");
   const path = nodeRequire<typeof import("path")>("path");

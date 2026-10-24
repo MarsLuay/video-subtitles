@@ -2,10 +2,11 @@ import { Notice } from "obsidian";
 import { formatCreateProgress, monotonicPercent } from "../transcribe/progress";
 
 export function showCreateProgressNotice(): {
-  setPercent: (percent: number) => void;
+  setPercent: (percent: number, remainingSec?: number | null) => void;
   hide: () => void;
 } {
   let shown = 1;
+  let remaining: number | null = null;
   const notice = new Notice("", 0);
   const host = notice.messageEl;
   host.empty();
@@ -13,10 +14,11 @@ export function showCreateProgressNotice(): {
   const label = host.createDiv({ cls: "video-subtitles-progress-label" });
   const track = host.createDiv({ cls: "video-subtitles-progress" });
   track.createDiv({ cls: "video-subtitles-progress-fill" });
-  const setPercent = (percent: number): void => {
+  const setPercent = (percent: number, remainingSec?: number | null): void => {
     shown = monotonicPercent(shown, percent);
+    remaining = remainingSec === undefined ? null : remainingSec;
     try {
-      label.setText(formatCreateProgress(shown));
+      label.setText(formatCreateProgress(shown, remaining));
     } catch {
       /* keep creating */
     }

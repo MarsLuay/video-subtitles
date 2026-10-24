@@ -12,8 +12,44 @@ export function clampPercent(value: number): number {
   return Math.max(0, Math.min(99, Math.round(value)));
 }
 
-export function formatCreateProgress(percent: number): string {
-  return `Creating subtitles… ${clampPercent(percent)}%`;
+export type CreateProgressFn = (percent: number, remainingSec?: number | null) => void;
+
+export function formatRemaining(remainingSec?: number | null): string {
+  if (remainingSec == null || !Number.isFinite(remainingSec) || remainingSec <= 0) return "";
+  const sec = Math.max(1, Math.round(remainingSec));
+  if (sec < 120) return `~${sec}s left`;
+  return `~${Math.round(sec / 60)} min left`;
+}
+
+export function formatCreateProgress(percent: number, remainingSec?: number | null): string {
+  const remaining = formatRemaining(remainingSec);
+  return remaining
+    ? `Creating subtitles… ${clampPercent(percent)}% · ${remaining}`
+    : `Creating subtitles… ${clampPercent(percent)}%`;
+}
+
+export function remainingTranscribeSeconds(input: {
+  completedWindows: number;
+  totalWindows: number;
+  elapsedMs: number;
+  firstWindowMs?: number;
+}): number | null {
+  const { completedWindows, totalWindows, elapsedMs, firstWindowMs } = input;
+  if (completedWindows < 1 || totalWindows <= completedWindows || elapsedMs <= 0) return null;
+  const left = totalWindows - completedWindows;
+  if (
+    completedWindows >= 2 &&
+    typeof firstWindowMs === "number" &&
+    firstWindowMs >= 0 &&
+    elapsedMs > firstWindowMs
+  ) {
+    const laterMs = elapsedMs - firstWindowMs;
+    const laterCount = completedWindows - 1;
+    if (laterCount > 0 && laterMs > 0) {
+      return Math.max(1, Math.round((left * laterMs) / laterCount / 1000));
+    }
+  }
+  return Math.max(1, Math.round((left * elapsedMs) / completedWindows / 1000));
 }
 
 export function monotonicPercent(current: number, next: number): number {

@@ -21,9 +21,11 @@ import { whisperModelId } from "../src/transcribe/models";
 import { transcriberCleanupPath } from "../src/transcribe/runtime";
 import {
   formatCreateProgress,
+  formatRemaining,
   loadStagePercent,
   mergeFileProgress,
   monotonicPercent,
+  remainingTranscribeSeconds,
   startEstimate,
   transcribeStagePercent
 } from "../src/transcribe/progress";
@@ -190,6 +192,22 @@ describe("generated track", () => {
 describe("create progress", () => {
   it("formats a monotonic percent and tracks model file downloads", () => {
     expect(formatCreateProgress(12.4)).toBe("Creating subtitles… 12%");
+    expect(formatRemaining(45)).toBe("~45s left");
+    expect(formatRemaining(180)).toBe("~3 min left");
+    expect(formatCreateProgress(62, 45)).toBe("Creating subtitles… 62% · ~45s left");
+    expect(remainingTranscribeSeconds({ completedWindows: 0, totalWindows: 5, elapsedMs: 10_000 })).toBeNull();
+    expect(remainingTranscribeSeconds({ completedWindows: 5, totalWindows: 5, elapsedMs: 10_000 })).toBeNull();
+    expect(
+      remainingTranscribeSeconds({ completedWindows: 1, totalWindows: 5, elapsedMs: 10_000 })
+    ).toBe(40);
+    expect(
+      remainingTranscribeSeconds({
+        completedWindows: 2,
+        totalWindows: 5,
+        elapsedMs: 40_000,
+        firstWindowMs: 30_000
+      })
+    ).toBe(30);
     expect(monotonicPercent(40, 12)).toBe(40);
     expect(monotonicPercent(40, 55.9)).toBe(56);
     const files = new Map<string, { loaded: number; total: number }>();
