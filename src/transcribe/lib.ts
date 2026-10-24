@@ -5,6 +5,7 @@ import type { TranscriberAccuracy } from "../settings";
 import { whisperModelId } from "./models";
 import type { SubtitleCue } from "../subtitles/cues";
 import { chunksToCues } from "./audio";
+import { loadStagePercent, mergeFileProgress, startEstimate, type ProgressEvent } from "./progress";
 
 export const TRANSFORMERS_VERSION = "4.3.1";
 export const ONNXRUNTIME_WEB_VERSION = "1.31.0-dev.20260914-8d85527a0";
@@ -147,9 +148,11 @@ export async function transcribePcm(
   accuracy: TranscriberAccuracy,
   libDir: string,
   modelsDir: string,
-  toUrl: (absPath: string) => string
+  toUrl: (absPath: string) => string,
+  onProgress?: (percent: number) => void
 ): Promise<SubtitleCue[]> {
   const path = nodeRequire<typeof import("path")>("path");
+  onProgress?.(18);
   await ensureTranscriberLib(libDir);
   const jsUrl = toUrl(path.join(libDir, "transformers.min.js"));
   const wasmPaths = {
@@ -164,23 +167,36 @@ export async function transcribePcm(
   transformers.env.useCustomCache = true;
   transformers.env.customCache = fileCache(modelsDir);
   applyWasmPaths(transformers, wasmPaths);
+  onProgress?.(20);
+  const downloads = new Map<string, { loaded: number; total: number }>();
   const asr = await transformers.pipeline("automatic-speech-recognition", whisperModelId(accuracy), {
     dtype: "q8",
-    device: inferenceDevice()
+    device: inferenceDevice(),
+    progress_callback: (event: ProgressEvent) => {
+      try {
+        onProgress?.(loadStagePercent(mergeFileProgress(downloads, event)));
+      } catch {
+        /* keep loading the model */
+      }
+    }
   });
+  const duration = pcm.length / 16_000;
+  onProgress?.(58);
+  const stopEstimate = startEstimate(58, 94, duration, (percent) => onProgress?.(percent), window);
   try {
     const result = await asr(new Float32Array(pcm), {
       return_timestamps: true,
       chunk_length_s: 30,
       stride_length_s: 5
     });
+    onProgress?.(96);
     const cues = chunksToCues(result.chunks ?? []);
     if (cues.length > 0) return cues;
     const text = (result.text ?? "").replace(/\s+/g, " ").trim();
     if (!text) throw new Error("The transcriber returned no speech");
-    const duration = pcm.length / 16_000;
     return [{ start: 0, end: Math.max(0.5, duration), text }];
   } finally {
+    stopEstimate();
     if (typeof asr.dispose === "function") await asr.dispose();
   }
 }

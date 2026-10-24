@@ -20,7 +20,14 @@ export class Plugin {
 }
 
 export class Notice {
-  constructor(_message: string, _timeout?: number) {}
+  message: string;
+  constructor(message: string, _timeout?: number) {
+    this.message = message;
+  }
+  setMessage(message: string): this {
+    this.message = message;
+    return this;
+  }
   hide(): void {}
 }
 

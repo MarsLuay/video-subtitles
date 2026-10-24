@@ -2,6 +2,7 @@ import { Notice, Platform, TFile, type Plugin } from "obsidian";
 import { upsertGeneratedTrack } from "../subtitles/generatedTrack";
 import { cleanupTranscriber, transcriberRoot, transcribeVideoFile, vaultFileAbsPath } from "../transcribe/runtime";
 import { pickAccuracyForHardware } from "../transcribe/hardware";
+import { formatCreateProgress, monotonicPercent } from "../transcribe/progress";
 import { readHardware } from "../transcribe/node";
 import type { VideoSubtitleSettings } from "../settings";
 import { resolveVideoFile } from "./resolveVideoFile";
@@ -273,7 +274,16 @@ class VideoSession {
       return;
     }
     this.creating = true;
-    const status = new Notice("Creating subtitles…", 0);
+    let shown = 1;
+    const status = new Notice(formatCreateProgress(shown), 0);
+    const report = (percent: number): void => {
+      shown = monotonicPercent(shown, percent);
+      try {
+        status.setMessage(formatCreateProgress(shown));
+      } catch {
+        /* keep creating */
+      }
+    };
     let root = "";
     try {
       root = transcriberRoot(this.plugin);
@@ -281,7 +291,8 @@ class VideoSession {
         this.plugin,
         vaultFileAbsPath(this.plugin, file),
         this.plugin.subtitleSettings.transcriberAccuracy,
-        win
+        win,
+        report
       );
       if (cues.length === 0) {
         status.hide();
@@ -290,6 +301,7 @@ class VideoSession {
       }
       this.store = upsertGeneratedTrack(this.store, cues);
       this.paintCues();
+      report(98);
       const saved = await this.persist();
       status.hide();
       if (saved) new Notice("Added generated subtitles to the video.");

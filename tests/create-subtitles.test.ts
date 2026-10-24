@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { chunksToCues, mixToMono, readWavPcm, resampleLinear } from "../src/transcribe/audio";
 import { ffmpegAsset, FFMPEG_RELEASE } from "../src/transcribe/ffmpeg";
 import { pickAccuracyForHardware } from "../src/transcribe/hardware";
@@ -11,6 +11,13 @@ import {
 } from "../src/transcribe/lib";
 import { whisperModelId } from "../src/transcribe/models";
 import { transcriberCleanupPath } from "../src/transcribe/runtime";
+import {
+  formatCreateProgress,
+  loadStagePercent,
+  mergeFileProgress,
+  monotonicPercent,
+  startEstimate
+} from "../src/transcribe/progress";
 import { upsertGeneratedTrack } from "../src/subtitles/generatedTrack";
 import { emptyStore } from "../src/subtitles/store";
 import {
@@ -87,6 +94,34 @@ describe("generated track", () => {
     expect(second.tracks).toHaveLength(1);
     expect(second.tracks[0]?.id).toBe(first.tracks[0]?.id);
     expect(second.tracks[0]?.cues).toEqual([{ start: 0, end: 2, text: "two" }]);
+  });
+});
+
+describe("create progress", () => {
+  it("formats a monotonic percent and tracks model file downloads", () => {
+    expect(formatCreateProgress(12.4)).toBe("Creating subtitles… 12%");
+    expect(monotonicPercent(40, 12)).toBe(40);
+    expect(monotonicPercent(40, 55.9)).toBe(56);
+    const files = new Map<string, { loaded: number; total: number }>();
+    expect(mergeFileProgress(files, { file: "a", loaded: 50, total: 100 })).toBe(0.5);
+    expect(mergeFileProgress(files, { file: "b", status: "done", total: 100 })).toBe(0.75);
+    expect(loadStagePercent(0)).toBe(20);
+    expect(loadStagePercent(1)).toBe(55);
+  });
+
+  it("ticks an estimate while transcription is running", () => {
+    vi.useFakeTimers();
+    const ticks: number[] = [];
+    const stop = startEstimate(58, 94, 5, (percent) => ticks.push(percent), {
+      setInterval,
+      clearInterval
+    });
+    vi.advanceTimersByTime(1000);
+    stop();
+    vi.useRealTimers();
+    expect(ticks.length).toBeGreaterThan(0);
+    expect(ticks[0]).toBeGreaterThan(58);
+    expect(ticks.at(-1)).toBeLessThan(94);
   });
 });
 
