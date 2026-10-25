@@ -131,6 +131,21 @@ export class Setting {
     cb(dropdown);
     return this;
   }
+  addSlider(cb: (slider: {
+    setLimits: (min: number, max: number, step: number) => typeof slider;
+    setValue: (value: number) => typeof slider;
+    setInstant: (instant: boolean) => typeof slider;
+    onChange: (cb: (value: number) => unknown) => typeof slider;
+  }) => void): this {
+    const slider = {
+      setLimits: (_min: number, _max: number, _step: number) => slider,
+      setValue: (_value: number) => slider,
+      setInstant: (_instant: boolean) => slider,
+      onChange: (_cb: (value: number) => unknown) => slider
+    };
+    cb(slider);
+    return this;
+  }
   addButton(cb: (button: {
     setButtonText: (value: string) => typeof button;
     setCta: () => typeof button;

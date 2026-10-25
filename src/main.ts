@@ -39,6 +39,7 @@ export default class VideoSubtitlesPlugin extends Plugin implements VideoSubtitl
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.subtitleSettings);
+    this.surfaces?.applyCueAppearance();
   }
 
   applyGenerated(

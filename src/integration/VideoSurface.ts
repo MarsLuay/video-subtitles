@@ -7,7 +7,7 @@ import { readHardware } from "../transcribe/node";
 import { videoDurationSec, type TranscribeRange } from "../transcribe/range";
 import { promptCreateRange } from "../ui/createRangeModal";
 import { resolveVideoFile } from "./resolveVideoFile";
-import { renderCueOverlay } from "../ui/captionOverlay";
+import { applyCueAppearance, renderCueOverlay } from "../ui/captionOverlay";
 import { toggleOverflowMenu } from "../ui/overflowMenu";
 import {
   DEBUG_SHOW_OVERFLOW_HIT,
@@ -73,6 +73,7 @@ class VideoSession extends Component {
     parent.insertBefore(this.player, video);
     this.player.appendChild(video);
     this.cuesEl = this.player.createDiv({ cls: "video-subtitles-cues is-empty" });
+    this.paintCueStyle();
     this.hitEl = this.player.createDiv({
       cls: "video-subtitles-overflow-hit",
       attr: {
@@ -432,8 +433,14 @@ class VideoSession extends Component {
     return this.store.tracks.find((track) => track.id === id) ?? null;
   }
 
+  paintCueStyle(): void {
+    if (!this.cuesEl.isConnected) return;
+    applyCueAppearance(this.cuesEl, this.plugin.subtitleSettings);
+  }
+
   private paintCues(): void {
     if (!this.cuesEl.isConnected) return;
+    this.paintCueStyle();
     const track = this.activeTrack();
     renderCueOverlay(this.cuesEl, track?.cues ?? [], this.video.currentTime);
   }
@@ -576,6 +583,10 @@ export class VideoSurfaceManager {
     win.clearTimeout(this.scanTimer);
     for (const session of this.sessions.values()) session.destroy();
     this.sessions.clear();
+  }
+
+  applyCueAppearance(): void {
+    for (const session of this.sessions.values()) session.paintCueStyle();
   }
 
   applyGenerated(

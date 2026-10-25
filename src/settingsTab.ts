@@ -7,6 +7,7 @@ import {
   MAX_SPEAKERS,
   TRANSCRIBER_ACCURACY,
   TRANSCRIBER_LANGUAGE,
+  clampCueOpacity,
   isMaxSpeakers,
   isTranscriberAccuracy,
   isTranscriberLanguage
@@ -21,6 +22,7 @@ export type SettingsHost = VideoSubtitlesHost;
 export class VideoSubtitlesSettingTab extends PluginSettingTab {
   private unsubscribe: (() => void) | null = null;
   private progressEl: HTMLElement | null = null;
+  private opacitySettingEl: HTMLElement | null = null;
   private processButton: {
     setButtonText: (value: string) => unknown;
     setDisabled: (disabled: boolean) => unknown;
@@ -39,6 +41,7 @@ export class VideoSubtitlesSettingTab extends PluginSettingTab {
     containerEl.empty();
     this.unsubscribe?.();
     this.progressEl = null;
+    this.opacitySettingEl = null;
     this.processButton = null;
     for (const def of this.getSettingDefinitions()) {
       const setting = new Setting(containerEl).setName(def.name);
@@ -53,11 +56,43 @@ export class VideoSubtitlesSettingTab extends PluginSettingTab {
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.progressEl = null;
+    this.opacitySettingEl = null;
     super.hide();
   }
 
   getSettingDefinitions() {
     return [
+      {
+        name: "Transparent background",
+        desc: "Show cues as text only, with no black bar. On by default.",
+        render: (setting: Setting) => {
+          setting.addToggle((toggle) =>
+            toggle.setValue(this.host.subtitleSettings.transparentBackground).onChange(async (value) => {
+              this.host.subtitleSettings.transparentBackground = value;
+              this.syncOpacitySetting();
+              await this.host.saveSettings();
+            })
+          );
+        }
+      },
+      {
+        name: "Text opacity",
+        desc: "How solid the cue text is.",
+        render: (setting: Setting) => {
+          this.opacitySettingEl = setting.settingEl;
+          this.syncOpacitySetting();
+          setting.addSlider((slider) => {
+            slider
+              .setLimits(0, 100, 1)
+              .setValue(this.host.subtitleSettings.cueOpacity)
+              .setInstant(true)
+              .onChange(async (value) => {
+                this.host.subtitleSettings.cueOpacity = clampCueOpacity(value);
+                await this.host.saveSettings();
+              });
+          });
+        }
+      },
       {
         name: "Keep transcriber",
         desc: "Keep the downloaded transcriber so creating subtitles does not fetch it again. Turned on by default.",
@@ -183,6 +218,13 @@ export class VideoSubtitlesSettingTab extends PluginSettingTab {
         }
       }
     ];
+  }
+
+  private syncOpacitySetting(): void {
+    this.opacitySettingEl?.toggleClass(
+      "video-subtitles-setting-hidden",
+      !this.host.subtitleSettings.transparentBackground
+    );
   }
 
   private paintProgress(): void {

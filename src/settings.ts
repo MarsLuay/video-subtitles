@@ -41,6 +41,8 @@ export interface VideoSubtitleSettings {
   diarization: boolean;
   maxSpeakers: MaxSpeakers;
   chooseCreateRange: boolean;
+  transparentBackground: boolean;
+  cueOpacity: number;
 }
 
 export type CreateTranscribeSettings = Pick<
@@ -53,6 +55,8 @@ export type CreateTranscribeSettings = Pick<
   | "maxSpeakers"
 >;
 
+export const DEFAULT_CUE_OPACITY = 100;
+
 export const DEFAULT_SETTINGS: VideoSubtitleSettings = {
   keepTranscriber: true,
   transcriberAccuracy: "base",
@@ -62,7 +66,9 @@ export const DEFAULT_SETTINGS: VideoSubtitleSettings = {
   wordTimestamps: false,
   diarization: false,
   maxSpeakers: 2,
-  chooseCreateRange: false
+  chooseCreateRange: false,
+  transparentBackground: true,
+  cueOpacity: DEFAULT_CUE_OPACITY
 };
 
 export const ACCURACY_LABELS: Record<TranscriberAccuracy, string> = {
@@ -106,6 +112,11 @@ export function isMaxSpeakers(value: unknown): value is MaxSpeakers {
   return value === 2 || value === 3 || value === 4;
 }
 
+export function clampCueOpacity(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_CUE_OPACITY;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
 export function whisperInputOptions(settings: CreateTranscribeSettings): {
   return_timestamps: true | "word";
   language?: string;
@@ -138,6 +149,8 @@ export function mergeSettings(raw: unknown): VideoSubtitleSettings {
     wordTimestamps: src.wordTimestamps === true,
     diarization: src.diarization === true,
     maxSpeakers: isMaxSpeakers(src.maxSpeakers) ? src.maxSpeakers : DEFAULT_SETTINGS.maxSpeakers,
-    chooseCreateRange: src.chooseCreateRange === true
+    chooseCreateRange: src.chooseCreateRange === true,
+    transparentBackground: src.transparentBackground !== false,
+    cueOpacity: clampCueOpacity(src.cueOpacity)
   };
 }

@@ -65,10 +65,12 @@ import { paintBatchProgress } from "../src/ui/batchProgress";
 import { BatchProgressDock } from "../src/ui/batchProgressDock";
 import {
   ACCURACY_LABELS,
+  DEFAULT_CUE_OPACITY,
   DEFAULT_SETTINGS,
   GENERATED_TRACK_LABEL,
   LANGUAGE_LABELS,
   MAX_SPEAKERS,
+  clampCueOpacity,
   mergeSettings,
   TRANSCRIBER_ACCURACY,
   TRANSCRIBER_LANGUAGE,
@@ -113,6 +115,8 @@ describe("subtitle settings", () => {
     expect(DEFAULT_SETTINGS.translateToEnglish).toBe(false);
     expect(DEFAULT_SETTINGS.wordTimestamps).toBe(false);
     expect(DEFAULT_SETTINGS.chooseCreateRange).toBe(false);
+    expect(DEFAULT_SETTINGS.transparentBackground).toBe(true);
+    expect(DEFAULT_SETTINGS.cueOpacity).toBe(DEFAULT_CUE_OPACITY);
     expect(mergeSettings(undefined).keepTranscriber).toBe(true);
     expect(mergeSettings({ keepTranscriber: false }).keepTranscriber).toBe(false);
     expect(mergeSettings({ transcriberAccuracy: "large", accuracyInitialized: true })).toEqual({
@@ -124,8 +128,15 @@ describe("subtitle settings", () => {
       wordTimestamps: false,
       diarization: false,
       maxSpeakers: 2,
-      chooseCreateRange: false
+      chooseCreateRange: false,
+      transparentBackground: true,
+      cueOpacity: 100
     });
+    expect(mergeSettings({ transparentBackground: false, cueOpacity: 40 }).transparentBackground).toBe(false);
+    expect(mergeSettings({ cueOpacity: 40 }).cueOpacity).toBe(40);
+    expect(clampCueOpacity(-10)).toBe(0);
+    expect(clampCueOpacity(140)).toBe(100);
+    expect(clampCueOpacity("nope")).toBe(100);
     expect(mergeSettings({ chooseCreateRange: true }).chooseCreateRange).toBe(true);
     expect(mergeSettings({ transcriberAccuracy: "nope" }).transcriberAccuracy).toBe("base");
     expect(mergeSettings({ diarization: true, maxSpeakers: 3, transcriberLanguage: "fr" })).toMatchObject({
@@ -168,6 +179,8 @@ describe("subtitle settings", () => {
     } as unknown as SettingsHost;
     const tab = new VideoSubtitlesSettingTab(host.app, host);
     expect(tab.getSettingDefinitions().map((def) => def.name)).toEqual([
+      "Transparent background",
+      "Text opacity",
       "Keep transcriber",
       "Choose Create range",
       "Transcriber accuracy",
@@ -178,6 +191,11 @@ describe("subtitle settings", () => {
       "Max speakers",
       "Process all videos"
     ]);
+    tab.display();
+    expect(tab.containerEl.querySelector(".video-subtitles-setting-hidden")).toBeNull();
+    host.subtitleSettings.transparentBackground = false;
+    tab.display();
+    expect(tab.containerEl.querySelector(".video-subtitles-setting-hidden")).not.toBeNull();
   });
 
   it("starts process all from settings and paints live progress there", async () => {
