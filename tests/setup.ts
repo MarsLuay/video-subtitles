@@ -12,6 +12,34 @@ Object.defineProperty(HTMLElement.prototype, "setCssProps", {
   }
 });
 
+Object.defineProperty(HTMLElement.prototype, "empty", {
+  configurable: true,
+  value(this: HTMLElement) {
+    this.replaceChildren();
+  }
+});
+
+Object.defineProperty(HTMLElement.prototype, "addClass", {
+  configurable: true,
+  value(this: HTMLElement, cls: string) {
+    this.classList.add(cls);
+  }
+});
+
+Object.defineProperty(HTMLElement.prototype, "createDiv", {
+  configurable: true,
+  value(this: HTMLElement, opts?: string | { cls?: string; text?: string }) {
+    const el = document.createElement("div");
+    if (typeof opts === "string") el.className = opts;
+    else if (opts) {
+      if (opts.cls) el.className = opts.cls;
+      if (opts.text) el.textContent = opts.text;
+    }
+    this.appendChild(el);
+    return el;
+  }
+});
+
 Object.defineProperty(window, "matchMedia", {
   writable: true,
   value: (query: string) => ({

@@ -16,22 +16,27 @@ function addMeter(parent: HTMLElement, label: string, percent: number): void {
 
 export function paintBatchProgress(host: HTMLElement, snapshot: CreateQueueSnapshot): void {
   host.empty();
-  if (!snapshot.running) return;
-  addMeter(
-    host,
-    formatBatchOverall(snapshot.completed, snapshot.total, snapshot.overallRemainingSec),
-    snapshot.overallPercent
-  );
-  if (snapshot.currentName) {
+  if (snapshot.running) {
     addMeter(
       host,
-      formatBatchCurrent(
-        snapshot.currentName,
-        snapshot.currentPercent,
-        snapshot.currentRemainingSec,
-        snapshot.currentPhase
-      ),
-      snapshot.currentPercent
+      formatBatchOverall(snapshot.completed, snapshot.total, snapshot.overallRemainingSec),
+      snapshot.overallPercent
     );
+    if (snapshot.currentName) {
+      addMeter(
+        host,
+        formatBatchCurrent(
+          snapshot.currentName,
+          snapshot.currentPercent,
+          snapshot.currentRemainingSec,
+          snapshot.currentPhase
+        ),
+        snapshot.currentPercent
+      );
+    }
+    return;
+  }
+  if (snapshot.lastMessage) {
+    host.createDiv({ cls: "video-subtitles-batch-label", text: snapshot.lastMessage });
   }
 }

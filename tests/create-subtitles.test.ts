@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { TFile } from "obsidian";
+import { lastSettingButtonClick } from "./mocks/obsidian";
 import {
   appendWindowCues,
   chunksToCues,
@@ -25,6 +26,7 @@ import {
   bumpJobs,
   formatBatchCurrent,
   formatBatchOverall,
+  formatBatchResult,
   idleQueueSnapshot,
   isEncryptedVaultPath,
   overallProgressPercent,
@@ -57,6 +59,7 @@ import {
 import { spliceGeneratedTrack, upsertGeneratedTrack } from "../src/subtitles/generatedTrack";
 import { emptyStore } from "../src/subtitles/store";
 import { VideoSubtitlesSettingTab, type SettingsHost } from "../src/settingsTab";
+import { paintBatchProgress } from "../src/ui/batchProgress";
 import {
   ACCURACY_LABELS,
   DEFAULT_SETTINGS,
@@ -172,6 +175,44 @@ describe("subtitle settings", () => {
       "Max speakers",
       "Process all videos"
     ]);
+  });
+
+  it("starts process all from settings and paints live progress there", async () => {
+    const start = vi.fn();
+    const file = new TFile();
+    file.path = "talk.mp4";
+    file.name = "talk.mp4";
+    file.extension = "mp4";
+    const snapshot = {
+      ...idleQueueSnapshot(),
+      running: true,
+      total: 1,
+      currentName: "talk.mp4",
+      currentPercent: 12,
+      overallPercent: 12
+    };
+    const host = {
+      app: {
+        workspace: { containerEl: document.createElement("div") },
+        vault: { getFiles: () => [file] }
+      },
+      subtitleSettings: { ...DEFAULT_SETTINGS, accuracyInitialized: true } satisfies VideoSubtitleSettings,
+      saveSettings: () => Promise.resolve(),
+      createQueue: {
+        running: false,
+        snapshot: () => snapshot,
+        subscribe: () => () => undefined,
+        start,
+        prioritize: () => "queued"
+      },
+      applyGenerated: () => Promise.resolve(false)
+    } as unknown as SettingsHost;
+    const tab = new VideoSubtitlesSettingTab(host.app, host);
+    tab.display();
+    expect(tab.containerEl.textContent).toContain("All videos");
+    expect(tab.containerEl.textContent).toContain("talk.mp4");
+    await lastSettingButtonClick?.();
+    expect(start).toHaveBeenCalledWith([file], true);
   });
 });
 
@@ -493,5 +534,13 @@ describe("process all videos", () => {
     ).toBe(40);
     expect(formatBatchOverall(1, 4, 45)).toBe("All videos… 1/4 · ~45s left");
     expect(formatBatchCurrent("talk.mp4", 12, null, "load")).toBe("talk.mp4 · Loading transcriber… 12%");
+    expect(formatBatchResult(3, 0)).toBe("Added generated subtitles to 3 videos.");
+    expect(formatBatchResult(1, 2)).toBe("Added generated subtitles to 1 videos. 2 failed.");
+    const host = document.createElement("div");
+    paintBatchProgress(host, {
+      ...idleQueueSnapshot(),
+      lastMessage: "Added generated subtitles to 3 videos."
+    });
+    expect(host.textContent).toBe("Added generated subtitles to 3 videos.");
   });
 });

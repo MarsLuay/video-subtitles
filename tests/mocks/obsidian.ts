@@ -88,8 +88,13 @@ export class PluginSettingTab {
   hide(): void {}
 }
 
+export let lastSettingButtonClick: (() => unknown) | null = null;
+
 export class Setting {
-  constructor(_containerEl: HTMLElement) {}
+  settingEl: HTMLElement;
+  constructor(containerEl: HTMLElement) {
+    this.settingEl = containerEl.createDiv({ cls: "setting-item" });
+  }
   setName(_name: string): this {
     return this;
   }
@@ -120,12 +125,17 @@ export class Setting {
   addButton(cb: (button: {
     setButtonText: (value: string) => typeof button;
     setCta: () => typeof button;
+    setDisabled: (disabled: boolean) => typeof button;
     onClick: (cb: () => unknown) => typeof button;
   }) => void): this {
     const button = {
       setButtonText: (_value: string) => button,
       setCta: () => button,
-      onClick: (_cb: () => unknown) => button
+      setDisabled: (_disabled: boolean) => button,
+      onClick: (handler: () => unknown) => {
+        lastSettingButtonClick = handler;
+        return button;
+      }
     };
     cb(button);
     return this;

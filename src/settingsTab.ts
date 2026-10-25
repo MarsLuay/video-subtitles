@@ -1,4 +1,4 @@
-import { Notice, Platform, PluginSettingTab, Setting } from "obsidian";
+import { Platform, PluginSettingTab, Setting } from "obsidian";
 import type { VideoSubtitlesHost } from "./pluginHost";
 import {
   ACCURACY_LABELS,
@@ -11,18 +11,21 @@ import {
   isTranscriberAccuracy,
   isTranscriberLanguage
 } from "./settings";
-import { isEncryptedVaultPath } from "./transcribe/batch";
-import { isVideoExtension } from "./videoFileTypes";
+import { vaultVideoFiles } from "./transcribe/batch";
 import { pickAccuracyForHardware } from "./transcribe/hardware";
 import { readHardware } from "./transcribe/node";
 import { paintBatchProgress } from "./ui/batchProgress";
-import { confirmProcessAll } from "./ui/processAllModal";
 
 export type SettingsHost = VideoSubtitlesHost;
 
 export class VideoSubtitlesSettingTab extends PluginSettingTab {
   private unsubscribe: (() => void) | null = null;
   private progressEl: HTMLElement | null = null;
+  private processButton: {
+    setButtonText: (value: string) => unknown;
+    setDisabled: (disabled: boolean) => unknown;
+  } | null = null;
+  private localStatus = "";
 
   constructor(
     app: ConstructorParameters<typeof PluginSettingTab>[0],
@@ -35,12 +38,13 @@ export class VideoSubtitlesSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     this.unsubscribe?.();
+    this.progressEl = null;
+    this.processButton = null;
     for (const def of this.getSettingDefinitions()) {
       const setting = new Setting(containerEl).setName(def.name);
       if ("desc" in def && typeof def.desc === "string") setting.setDesc(def.desc);
       def.render(setting);
     }
-    this.progressEl = containerEl.createDiv({ cls: "video-subtitles-batch-progress" });
     this.unsubscribe = this.host.createQueue.subscribe(() => this.paintProgress());
     this.paintProgress();
   }
@@ -168,39 +172,51 @@ export class VideoSubtitlesSettingTab extends PluginSettingTab {
         name: "Process all videos",
         desc: "Transcribe every video in the vault. This can take a long time.",
         render: (setting: Setting) => {
-          setting.addButton((button) =>
+          setting.settingEl.addClass("video-subtitles-process-all");
+          setting.addButton((button) => {
+            this.processButton = button;
             button.setButtonText("Process all videos").onClick(() => {
               void this.startBatch();
-            })
-          );
+            });
+          });
+          this.progressEl = setting.settingEl.createDiv({ cls: "video-subtitles-batch-progress" });
         }
       }
     ];
   }
 
   private paintProgress(): void {
+    const snapshot = this.host.createQueue.snapshot();
+    if (this.processButton) {
+      this.processButton.setDisabled(snapshot.running);
+      this.processButton.setButtonText(snapshot.running ? "Processing…" : "Process all videos");
+    }
     if (!this.progressEl) return;
-    paintBatchProgress(this.progressEl, this.host.createQueue.snapshot());
+    if (this.localStatus && !snapshot.running) {
+      this.progressEl.empty();
+      this.progressEl.createDiv({ cls: "video-subtitles-batch-label", text: this.localStatus });
+      return;
+    }
+    paintBatchProgress(this.progressEl, snapshot);
   }
 
   private async startBatch(): Promise<void> {
     if (!Platform.isDesktopApp) {
-      new Notice("Creating subtitles needs desktop Obsidian.");
+      this.localStatus = "Creating subtitles needs desktop Obsidian.";
+      this.paintProgress();
       return;
     }
     if (this.host.createQueue.running) {
-      new Notice("Already processing videos.");
+      this.paintProgress();
       return;
     }
-    const files = this.app.vault.getFiles().filter(
-      (file) => isVideoExtension(file.extension) && !isEncryptedVaultPath(file.path)
-    );
+    const files = vaultVideoFiles(this.app.vault.getFiles());
     if (files.length === 0) {
-      new Notice("No videos in the vault.");
+      this.localStatus = "No videos in the vault.";
+      this.paintProgress();
       return;
     }
-    const confirmed = await confirmProcessAll(this.app, files.length);
-    if (!confirmed) return;
+    this.localStatus = "";
     if (!this.host.subtitleSettings.accuracyInitialized) {
       try {
         this.host.subtitleSettings.transcriberAccuracy = pickAccuracyForHardware(readHardware());

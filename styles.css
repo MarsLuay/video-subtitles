@@ -22,12 +22,13 @@
   flex: 1;
 }
 
-.video-subtitles-process-all-hint {
-  margin-top: 0;
+.video-subtitles-process-all {
+  flex-wrap: wrap;
 }
 
-.video-subtitles-batch-progress {
-  margin-top: 1.25em;
+.video-subtitles-process-all .video-subtitles-batch-progress {
+  flex: 1 1 100%;
+  margin-top: 8px;
 }
 
 .video-subtitles-batch-row {

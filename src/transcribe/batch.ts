@@ -35,6 +35,7 @@ export type CreateQueueSnapshot = {
   currentPhase: CreateProgressPhase;
   overallPercent: number;
   overallRemainingSec: number | null;
+  lastMessage: string;
 };
 
 export type CreateQueueHost = Plugin & {
@@ -111,6 +112,15 @@ export function formatBatchCurrent(
   return `${name} · ${formatCreateProgress(percent, remainingSec, phase)}`;
 }
 
+export function formatBatchResult(ok: number, failed: number): string {
+  if (ok > 0 && failed === 0) {
+    return ok === 1 ? "Added generated subtitles to the video." : `Added generated subtitles to ${ok} videos.`;
+  }
+  if (ok > 0) return `Added generated subtitles to ${ok} videos. ${failed} failed.`;
+  if (failed > 0) return "Could not create subtitles for those videos.";
+  return "";
+}
+
 export function idleQueueSnapshot(): CreateQueueSnapshot {
   return {
     running: false,
@@ -121,7 +131,8 @@ export function idleQueueSnapshot(): CreateQueueSnapshot {
     currentRemainingSec: null,
     currentPhase: "load",
     overallPercent: 0,
-    overallRemainingSec: null
+    overallRemainingSec: null,
+    lastMessage: ""
   };
 }
 
@@ -144,6 +155,7 @@ export class CreateQueue {
   private completedBytes = 0;
   private completedElapsedMs = 0;
   private batchMode = false;
+  private lastMessage = "";
   private aborted = false;
   private worker: Promise<void> | null = null;
   private readonly listeners = new Set<() => void>();
@@ -175,7 +187,8 @@ export class CreateQueue {
         completedCount: this.completed,
         completedBytes: this.completedBytes,
         completedElapsedMs: this.completedElapsedMs
-      })
+      }),
+      lastMessage: this.lastMessage
     };
   }
 
@@ -191,7 +204,10 @@ export class CreateQueue {
     for (const file of files) {
       this.pending = bumpJobs(this.pending, { path: file.path, range: null }).pending;
     }
-    if (fromSettings) this.batchMode = true;
+    if (fromSettings) {
+      this.batchMode = true;
+      this.lastMessage = "";
+    }
     this.syncTotal();
     this.notify();
     this.ensureWorker();
@@ -275,7 +291,7 @@ export class CreateQueue {
         this.syncTotal();
         this.notify();
       }
-      if (this.batchMode) this.finishNotice();
+      if (this.batchMode) this.lastMessage = formatBatchResult(this.completed - this.failed, this.failed);
     } finally {
       this.pending = [];
       this.current = null;
@@ -347,18 +363,5 @@ export class CreateQueue {
       }
       throw error;
     }
-  }
-
-  private finishNotice(): void {
-    const ok = this.completed - this.failed;
-    if (ok > 0 && this.failed === 0) {
-      new Notice(ok === 1 ? "Added generated subtitles to the video." : `Added generated subtitles to ${ok} videos.`);
-      return;
-    }
-    if (ok > 0) {
-      new Notice(`Added generated subtitles to ${ok} videos. ${this.failed} failed.`);
-      return;
-    }
-    if (this.failed > 0) new Notice("Could not create subtitles for those videos.");
   }
 }
