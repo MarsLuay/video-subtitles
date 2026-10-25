@@ -13,13 +13,14 @@ import {
   WHISPER_SAMPLE_RATE
 } from "../src/transcribe/audio";
 import { ffmpegAsset, FFMPEG_RELEASE } from "../src/transcribe/ffmpeg";
-import { pickAccuracyForHardware } from "../src/transcribe/hardware";
+import { pickAccuracyForHardware, pickWasmThreads } from "../src/transcribe/hardware";
 import { fileCache, modelCachePath } from "../src/transcribe/cache";
 import {
   forceWebOnnxSource,
   inferenceDevice,
   ONNXRUNTIME_WEB_VERSION,
   ONNX_WASM_PROXY,
+  onnxWasmThreads,
   TRANSFORMERS_VERSION,
   transcriberLibFiles
 } from "../src/transcribe/lib";
@@ -344,13 +345,18 @@ describe("create resume", () => {
 
 describe("hardware accuracy pick", () => {
   it("picks a Whisper size from RAM and Apple silicon only on first run logic", () => {
-    expect(pickAccuracyForHardware({ platform: "linux", arch: "x64", totalmem: gb(8), cpuModel: "Intel" })).toBe("tiny");
-    expect(pickAccuracyForHardware({ platform: "linux", arch: "x64", totalmem: gb(12), cpuModel: "Intel" })).toBe("base");
-    expect(pickAccuracyForHardware({ platform: "linux", arch: "x64", totalmem: gb(16), cpuModel: "Intel" })).toBe("base");
-    expect(pickAccuracyForHardware({ platform: "darwin", arch: "arm64", totalmem: gb(16), cpuModel: "Apple M4" })).toBe("small");
-    expect(pickAccuracyForHardware({ platform: "linux", arch: "x64", totalmem: gb(24), cpuModel: "AMD" })).toBe("small");
-    expect(pickAccuracyForHardware({ platform: "darwin", arch: "arm64", totalmem: gb(32), cpuModel: "Apple M4" })).toBe("medium");
-    expect(pickAccuracyForHardware({ platform: "darwin", arch: "arm64", totalmem: gb(64), cpuModel: "Apple M4 Max" })).toBe("large");
+    expect(pickAccuracyForHardware({ platform: "linux", arch: "x64", totalmem: gb(8), cpuCount: 4, cpuModel: "Intel" })).toBe("tiny");
+    expect(pickAccuracyForHardware({ platform: "linux", arch: "x64", totalmem: gb(12), cpuCount: 4, cpuModel: "Intel" })).toBe("base");
+    expect(pickAccuracyForHardware({ platform: "linux", arch: "x64", totalmem: gb(16), cpuCount: 8, cpuModel: "Intel" })).toBe("base");
+    expect(pickAccuracyForHardware({ platform: "darwin", arch: "arm64", totalmem: gb(16), cpuCount: 10, cpuModel: "Apple M4" })).toBe("small");
+    expect(pickAccuracyForHardware({ platform: "linux", arch: "x64", totalmem: gb(24), cpuCount: 8, cpuModel: "AMD" })).toBe("small");
+    expect(pickAccuracyForHardware({ platform: "darwin", arch: "arm64", totalmem: gb(32), cpuCount: 12, cpuModel: "Apple M4" })).toBe("medium");
+    expect(pickAccuracyForHardware({ platform: "darwin", arch: "arm64", totalmem: gb(64), cpuCount: 16, cpuModel: "Apple M4 Max" })).toBe("large");
+    expect(pickWasmThreads(1)).toBe(1);
+    expect(pickWasmThreads(2)).toBe(2);
+    expect(pickWasmThreads(8)).toBe(7);
+    expect(pickWasmThreads(16)).toBe(8);
+    expect(pickWasmThreads(8, false)).toBe(1);
   });
 });
 
@@ -532,7 +538,8 @@ describe("transcriber runtime files", () => {
     expect(ffmpegAsset("win32", "x64")?.binary).toBe("ffmpeg.exe");
     expect(ffmpegAsset("sunos", "x64")).toBeNull();
     expect(inferenceDevice()).toBe("wasm");
-    expect(ONNX_WASM_PROXY).toBe(false);
+    expect(ONNX_WASM_PROXY).toBe(true);
+    expect(onnxWasmThreads()).toBeGreaterThanOrEqual(1);
     expect(forceWebOnnxSource('vA=bA&&process?.release?.name==="node"&&!Ic')).toBe("vA=bA&&false&&!Ic");
     expect(
       forceWebOnnxSource('m=globalThis.process?.versions?.node&&"renderer"!=globalThis.process?.type')

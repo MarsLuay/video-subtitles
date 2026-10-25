@@ -1,8 +1,9 @@
 import { downloadFile, existsFile } from "./download";
 import { containedPath, readContainedFile, writeContainedFile } from "./containedFs";
-import { loadFs, loadPath } from "./node";
+import { loadFs, loadPath, readHardware } from "./node";
 import { fileCache } from "./cache";
 import { whisperInputOptions, type CreateTranscribeSettings } from "../settings";
+import { pickWasmThreads, wasmThreadsAvailable } from "./hardware";
 import { whisperModelId } from "./models";
 import type { SubtitleCue } from "../subtitles/cues";
 import { appendWindowCues, chunksToCues, pcmWindows } from "./audio";
@@ -83,7 +84,8 @@ export function inferenceDevice(): "wasm" {
   return "wasm";
 }
 
-export const ONNX_WASM_PROXY = false;
+export const ONNX_WASM_PROXY = true;
+export const PIPELINE_STALL_MS = 180_000;
 export const WEB_ONNX_IMPORT = "vs-web-onnx";
 
 type AsrPipeline = Awaited<ReturnType<TransformersModule["pipeline"]>>;
@@ -174,20 +176,57 @@ function importTransformers(jsUrl: string): Promise<TransformersModule> {
   return withBrowserProcessRelease(() => importEsm(`${base}#${WEB_ONNX_IMPORT}-${importNonce}`));
 }
 
+export function onnxWasmThreads(): number {
+  let cpuCount = 1;
+  try {
+    cpuCount = readHardware().cpuCount;
+  } catch {
+    const cores = window.navigator.hardwareConcurrency;
+    if (typeof cores === "number" && Number.isFinite(cores)) cpuCount = cores;
+  }
+  return pickWasmThreads(cpuCount, wasmThreadsAvailable());
+}
+
 function applyWasmPaths(
   transformers: TransformersModule,
   paths: { mjs: string; wasm: string },
-  proxy: boolean
+  proxy: boolean,
+  numThreads: number
 ): void {
+  const threads = Math.max(1, Math.round(numThreads));
   const targets: { wasm?: OnnxWasmEnv }[] = [transformers.env.backends.onnx];
   const globalOrt = (window as unknown as { ort?: { env?: { wasm?: OnnxWasmEnv } } }).ort?.env;
   if (globalOrt) targets.push(globalOrt);
   for (const target of targets) {
     if (!target.wasm) target.wasm = {};
     target.wasm.proxy = proxy;
-    target.wasm.numThreads = 1;
+    target.wasm.numThreads = threads;
     target.wasm.wasmPaths = paths;
   }
+}
+
+function stallPromise<T>(start: () => Promise<T>, ms: number): { promise: Promise<T>; ping: () => void } {
+  let timer = 0;
+  let rejectStall: (error: Error) => void = () => {};
+  const ping = (): void => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => rejectStall(new Error("Transcriber failed to start")), ms);
+  };
+  const promise = new Promise<T>((resolve, reject) => {
+    rejectStall = reject;
+    ping();
+    start().then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error("Transcriber failed to start"));
+      }
+    );
+  });
+  return { promise, ping };
 }
 
 function revokeBlobs(urls: readonly string[]): void {
@@ -255,6 +294,7 @@ async function ensureAsr(
   toUrl: (absPath: string) => string,
   reportLoad: (percent: number) => void
 ): Promise<AsrPipeline> {
+  const threads = onnxWasmThreads();
   const key = asrKey(settings);
   if (loaded?.key === key) {
     reportLoad(100);
@@ -274,26 +314,48 @@ async function ensureAsr(
     transformers.env.useFSCache = false;
     transformers.env.useCustomCache = true;
     transformers.env.customCache = fileCache(modelsDir);
-    applyWasmPaths(transformers, { mjs: wasmPaths.mjs, wasm: wasmPaths.wasm }, ONNX_WASM_PROXY);
     reportLoad(40);
     const downloads = new Map<string, { loaded: number; total: number }>();
     const stopTick = startEstimate(40, 99, 45, (percent) => reportLoad(percent), windowTimers());
-    try {
-      const asr = await transformers.pipeline(
-        "automatic-speech-recognition",
-        whisperModelId(settings.transcriberAccuracy),
-        {
-          dtype: "q8",
-          device: inferenceDevice(),
-          progress_callback: (event: ProgressEvent) => {
-            try {
-              reportLoad(loadStagePercent(mergeFileProgress(downloads, event)));
-            } catch {
-              /* keep loading the model */
+    const openAsr = (proxy: boolean, numThreads: number): Promise<AsrPipeline> => {
+      applyWasmPaths(transformers, { mjs: wasmPaths.mjs, wasm: wasmPaths.wasm }, proxy, numThreads);
+      const pingRef = { ping: (): void => {} };
+      const watch = stallPromise(
+        () =>
+          transformers.pipeline("automatic-speech-recognition", whisperModelId(settings.transcriberAccuracy), {
+            dtype: "q8",
+            device: inferenceDevice(),
+            progress_callback: (event: ProgressEvent) => {
+              pingRef.ping();
+              try {
+                reportLoad(loadStagePercent(mergeFileProgress(downloads, event)));
+              } catch {
+                /* keep loading the model */
+              }
             }
-          }
-        }
+          }),
+        PIPELINE_STALL_MS
       );
+      pingRef.ping = watch.ping;
+      return watch.promise;
+    };
+    try {
+      let asr: AsrPipeline;
+      let proxy = ONNX_WASM_PROXY;
+      let numThreads = threads;
+      try {
+        asr = await openAsr(proxy, numThreads);
+      } catch {
+        try {
+          proxy = true;
+          numThreads = 1;
+          asr = await openAsr(proxy, numThreads);
+        } catch {
+          proxy = false;
+          numThreads = threads;
+          asr = await openAsr(proxy, numThreads);
+        }
+      }
       loaded = { key, transformers, asr, blobs: wasmPaths.blobs };
       reportLoad(100);
       return asr;

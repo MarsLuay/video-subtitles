@@ -106,13 +106,16 @@ export function readHardware(): {
   platform: string;
   arch: string;
   totalmem: number;
+  cpuCount: number;
   cpuModel: string;
 } {
   const os = loadOs();
+  const cpus = os.cpus();
   return {
     platform: os.platform(),
     arch: os.arch(),
     totalmem: os.totalmem(),
-    cpuModel: os.cpus()[0]?.model ?? ""
+    cpuCount: Math.max(1, cpus.length),
+    cpuModel: cpus[0]?.model ?? ""
   };
 }
