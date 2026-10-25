@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { TFile } from "obsidian";
 import {
   appendWindowCues,
   chunksToCues,
@@ -20,6 +21,16 @@ import {
   transcriberLibFiles
 } from "../src/transcribe/lib";
 import { whisperModelId } from "../src/transcribe/models";
+import {
+  bumpJobs,
+  formatBatchCurrent,
+  formatBatchOverall,
+  idleQueueSnapshot,
+  isEncryptedVaultPath,
+  overallProgressPercent,
+  overallRemainingSec,
+  vaultVideoFiles
+} from "../src/transcribe/batch";
 import { shouldRemoveTranscriberOnUnload, transcriberCleanupPath } from "../src/transcribe/runtime";
 import {
   formatCreateProgress,
@@ -144,7 +155,9 @@ describe("subtitle settings", () => {
     const host = {
       app: { workspace: { containerEl: document.createElement("div") }, vault: {} },
       subtitleSettings: { ...DEFAULT_SETTINGS } satisfies VideoSubtitleSettings,
-      saveSettings: async () => undefined
+      saveSettings: async () => undefined,
+      createQueue: { running: false, snapshot: idleQueueSnapshot, subscribe: () => () => undefined, start: () => undefined, prioritize: () => "queued" },
+      applyGenerated: async () => false
     } as unknown as SettingsHost;
     const tab = new VideoSubtitlesSettingTab(host.app, host);
     expect(tab.getSettingDefinitions().map((def) => def.name)).toEqual([
@@ -155,7 +168,8 @@ describe("subtitle settings", () => {
       "Translate to English",
       "Word timestamps",
       "Diarization",
-      "Max speakers"
+      "Max speakers",
+      "Process all videos"
     ]);
   });
 });
@@ -406,5 +420,51 @@ describe("create range", () => {
     expect(normalizeTranscribeRange(0, 0.2, 60)).toBeNull();
     expect(parseCreateRange("0:10", "0:20", 60)).toEqual({ startSec: 10, endSec: 20 });
     expect(parseCreateRange("nope", "0:20", 60)).toBeNull();
+  });
+});
+
+describe("process all videos", () => {
+  it("queues a video to the front and skips encrypted files", () => {
+    const clip = (path: string, extension = "mp4"): TFile => {
+      const file = new TFile();
+      file.path = path;
+      file.extension = extension;
+      file.name = path.split("/").pop() ?? path;
+      return file;
+    };
+    const pending = [
+      { path: "a.mp4", range: null },
+      { path: "b.mp4", range: null },
+      { path: "c.mp4", range: null }
+    ];
+    expect(bumpJobs(pending, { path: "c.mp4", range: null })).toEqual({
+      pending: [
+        { path: "c.mp4", range: null },
+        { path: "a.mp4", range: null },
+        { path: "b.mp4", range: null }
+      ],
+      kind: "moved"
+    });
+    expect(bumpJobs(pending, { path: "d.mp4", range: null }).kind).toBe("queued");
+    expect(isEncryptedVaultPath("Encrypted Files/secret.mp4")).toBe(true);
+    expect(isEncryptedVaultPath("clips/talk.mp4")).toBe(false);
+    expect(
+      vaultVideoFiles([clip("talk.mp4"), clip("notes.md", "md"), clip("Encrypted Files/hidden.mp4")]).map(
+        (file) => file.path
+      )
+    ).toEqual(["talk.mp4"]);
+    expect(overallProgressPercent(1, 4, 50)).toBe(38);
+    expect(
+      overallRemainingSec({
+        currentRemainingSec: 20,
+        queuedCount: 2,
+        queuedBytes: 200,
+        completedCount: 1,
+        completedBytes: 100,
+        completedElapsedMs: 10_000
+      })
+    ).toBe(40);
+    expect(formatBatchOverall(1, 4, 45)).toBe("All videos… 1/4 · ~45s left");
+    expect(formatBatchCurrent("talk.mp4", 12, null, "load")).toBe("talk.mp4 · Loading transcriber… 12%");
   });
 });

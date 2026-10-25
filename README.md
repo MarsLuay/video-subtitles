@@ -13,7 +13,7 @@ Obsidian plugin. While a vault video is playing, the player **more options** con
 
 **Off** hides captions. It does not delete the stored track.
 
-**Settings → Video Subtitles** keeps the downloaded transcriber by default so Create does not fetch it every time. You can change Whisper accuracy, language, translate to English, word timestamps, and diarization. Turn on **Choose Create range** to pick a start and end time when you press Create; off by default transcribes the whole video. The first desktop start picks an accuracy from this computer.
+**Settings → Video Subtitles** keeps the downloaded transcriber by default so Create does not fetch it every time. You can change Whisper accuracy, language, translate to English, word timestamps, and diarization. Turn on **Choose Create range** to pick a start and end time when you press Create; off by default transcribes the whole video. **Process all videos** transcribes every vault video; it warns that this can take a long time and shows overall and current-video progress. While that runs, Create on a queued video moves it to the front. The first desktop start picks an accuracy from this computer.
 
 ## Setup
 

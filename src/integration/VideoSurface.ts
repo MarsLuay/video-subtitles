@@ -1,12 +1,11 @@
-import { Menu, Notice, Platform, TFile, type Plugin } from "obsidian";
-import { isGeneratedTrack, spliceGeneratedTrack, upsertGeneratedTrack } from "../subtitles/generatedTrack";
-import { cleanupTranscriber, clearCreateResume, transcriberRoot, transcribeVideoFile, vaultFileAbsPath } from "../transcribe/runtime";
+import { Menu, Notice, Platform, TFile } from "obsidian";
+import type { VideoSubtitlesHost } from "../pluginHost";
+import { spliceGeneratedTrack, upsertGeneratedTrack } from "../subtitles/generatedTrack";
+import { writeGeneratedCues } from "../subtitles/writeGenerated";
 import { pickAccuracyForHardware } from "../transcribe/hardware";
 import { readHardware } from "../transcribe/node";
 import { videoDurationSec, type TranscribeRange } from "../transcribe/range";
-import { showCreateProgressNotice } from "../ui/createProgressNotice";
 import { promptCreateRange } from "../ui/createRangeModal";
-import type { VideoSubtitleSettings } from "../settings";
 import { resolveVideoFile } from "./resolveVideoFile";
 import { renderCueOverlay } from "../ui/captionOverlay";
 import { toggleOverflowMenu } from "../ui/overflowMenu";
@@ -37,11 +36,6 @@ import {
 } from "../subtitles/store";
 import { toArrayBuffer } from "../subtitles/absorb/bytes";
 
-type VideoSubtitlesHost = Plugin & {
-  subtitleSettings: VideoSubtitleSettings;
-  saveSettings: () => Promise<void>;
-};
-
 function formatError(error: unknown): string {
   if (error instanceof Error) return error.stack || `${error.name}: ${error.message}`;
   try {
@@ -55,7 +49,6 @@ class VideoSession {
   private store: AbsorbedStore = emptyStore();
   private file: TFile | null = null;
   private idleTimer = 0;
-  private creating = false;
   private resizeObserver: ResizeObserver | null = null;
   private readonly player: HTMLElement;
   private readonly hitEl: HTMLElement;
@@ -418,16 +411,19 @@ class VideoSession {
       new Notice("Creating subtitles needs desktop Obsidian.");
       return;
     }
-    if (this.creating) {
-      new Notice("Already creating subtitles for this video.");
-      return;
-    }
     this.file = resolveVideoFile(this.plugin.app, this.video) ?? this.file;
     if (!(this.file instanceof TFile)) {
       new Notice("Open the video file to create subtitles.");
       return;
     }
     const file = this.file;
+    if (this.plugin.createQueue.running) {
+      const kind = this.plugin.createQueue.prioritize(file);
+      if (kind === "current") new Notice("Already creating subtitles for this video.");
+      else if (kind === "moved") new Notice("Moved this video to the front of the queue.");
+      else new Notice("Queued this video next.");
+      return;
+    }
     let range: TranscribeRange | null = null;
     if (this.plugin.subtitleSettings.chooseCreateRange) {
       const duration = videoDurationSec(this.video.duration);
@@ -447,65 +443,7 @@ class VideoSession {
         console.error(error);
       }
     }
-    const keep = this.plugin.subtitleSettings.keepTranscriber;
-    const win = this.video.ownerDocument.defaultView;
-    if (!win) {
-      new Notice("Could not create subtitles.");
-      return;
-    }
-    this.creating = true;
-    const status = showCreateProgressNotice();
-    let root = "";
-    try {
-      root = transcriberRoot(this.plugin);
-      const cues = await transcribeVideoFile(
-        this.plugin,
-        vaultFileAbsPath(this.plugin, file),
-        this.plugin.subtitleSettings,
-        win,
-        status.setPercent,
-        async (partial) => {
-          await this.applyGeneratedCues(partial, false, range);
-        },
-        range
-      );
-      if (cues.length === 0) {
-        status.hide();
-        clearCreateResume(this.plugin);
-        new Notice("The transcriber returned no speech.");
-        return;
-      }
-      status.setPercent(100, null, "work");
-      const saved = await this.applyGeneratedCues(cues, true, range);
-      status.hide();
-      if (saved) {
-        clearCreateResume(this.plugin);
-        new Notice("Added generated subtitles to the video.");
-      }
-    } catch (error) {
-      console.error(formatError(error));
-      status.hide();
-      if (this.hasGeneratedCues()) {
-        new Notice("Saved generated subtitles so far. Create again to continue.");
-      } else {
-        const message = error instanceof Error && error.message ? error.message : "Could not create subtitles.";
-        new Notice(message);
-      }
-    } finally {
-      this.creating = false;
-      try {
-        await this.persistQueue;
-      } catch {
-        /* keep going */
-      }
-      if (root) {
-        try {
-          cleanupTranscriber(root, keep);
-        } catch (error) {
-          console.error(formatError(error));
-        }
-      }
-    }
+    this.plugin.createQueue.prioritize(file, range);
   }
 
   private activeTrack(): SubtitleTrack | null {
@@ -519,11 +457,12 @@ class VideoSession {
     renderCueOverlay(this.cuesEl, track?.cues ?? [], this.video.currentTime);
   }
 
-  private hasGeneratedCues(): boolean {
-    return this.store.tracks.some((track) => isGeneratedTrack(track) && track.cues.length > 0);
+  ownsFile(file: TFile): boolean {
+    this.file = resolveVideoFile(this.plugin.app, this.video) ?? this.file;
+    return this.file?.path === file.path;
   }
 
-  private async applyGeneratedCues(
+  async applyGeneratedCues(
     cues: readonly SubtitleCue[],
     reload: boolean,
     range: TranscribeRange | null = null
@@ -657,5 +596,17 @@ export class VideoSurfaceManager {
     win.clearTimeout(this.scanTimer);
     for (const session of this.sessions.values()) session.destroy();
     this.sessions.clear();
+  }
+
+  applyGenerated(
+    file: TFile,
+    cues: readonly SubtitleCue[],
+    reload: boolean,
+    range: TranscribeRange | null
+  ): Promise<boolean> {
+    for (const session of this.sessions.values()) {
+      if (session.ownsFile(file)) return session.applyGeneratedCues(cues, reload, range);
+    }
+    return writeGeneratedCues(this.plugin, file, cues, range);
   }
 }

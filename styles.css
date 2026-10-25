@@ -22,6 +22,36 @@
   flex: 1;
 }
 
+.video-subtitles-process-all-hint {
+  margin-top: 0;
+}
+
+.video-subtitles-batch-progress {
+  margin-top: 1.25em;
+}
+
+.video-subtitles-batch-row {
+  margin-bottom: 12px;
+}
+
+.video-subtitles-batch-label {
+  margin-bottom: 8px;
+}
+
+.video-subtitles-progress-meter {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.video-subtitles-progress-meter-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--interactive-accent);
+  border-radius: inherit;
+}
+
 .video-subtitles-progress-notice {
   min-width: 280px;
 }

@@ -71,6 +71,7 @@ export class PluginSettingTab {
     this.plugin = plugin;
     this.containerEl = document.createElement("div");
   }
+  hide(): void {}
 }
 
 export class Setting {
@@ -100,6 +101,19 @@ export class Setting {
       onChange: (_cb: (value: string) => unknown) => dropdown
     };
     cb(dropdown);
+    return this;
+  }
+  addButton(cb: (button: {
+    setButtonText: (value: string) => typeof button;
+    setCta: () => typeof button;
+    onClick: (cb: () => unknown) => typeof button;
+  }) => void): this {
+    const button = {
+      setButtonText: (_value: string) => button,
+      setCta: () => button,
+      onClick: (_cb: () => unknown) => button
+    };
+    cb(button);
     return this;
   }
 }
@@ -157,6 +171,7 @@ export class TFile {
   path = "";
   name = "";
   extension = "";
+  stat = { size: 0, mtime: 0, ctime: 0 };
 }
 
 export class FileView {

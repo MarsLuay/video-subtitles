@@ -1,4 +1,5 @@
-import { PluginSettingTab, Setting, type Plugin } from "obsidian";
+import { Notice, Platform, PluginSettingTab, Setting } from "obsidian";
+import type { VideoSubtitlesHost } from "./pluginHost";
 import {
   ACCURACY_LABELS,
   LANGUAGE_LABELS,
@@ -7,16 +8,20 @@ import {
   TRANSCRIBER_LANGUAGE,
   isMaxSpeakers,
   isTranscriberAccuracy,
-  isTranscriberLanguage,
-  type VideoSubtitleSettings
+  isTranscriberLanguage
 } from "./settings";
+import { vaultVideoFiles } from "./transcribe/batch";
+import { pickAccuracyForHardware } from "./transcribe/hardware";
+import { readHardware } from "./transcribe/node";
+import { paintBatchProgress } from "./ui/batchProgress";
+import { confirmProcessAll } from "./ui/processAllModal";
 
-export type SettingsHost = Plugin & {
-  subtitleSettings: VideoSubtitleSettings;
-  saveSettings: () => Promise<void>;
-};
+export type SettingsHost = VideoSubtitlesHost;
 
 export class VideoSubtitlesSettingTab extends PluginSettingTab {
+  private unsubscribe: (() => void) | null = null;
+  private progressEl: HTMLElement | null = null;
+
   constructor(
     app: ConstructorParameters<typeof PluginSettingTab>[0],
     private readonly host: SettingsHost
@@ -27,11 +32,22 @@ export class VideoSubtitlesSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
+    this.unsubscribe?.();
     for (const def of this.getSettingDefinitions()) {
       const setting = new Setting(containerEl).setName(def.name);
       if ("desc" in def && typeof def.desc === "string") setting.setDesc(def.desc);
       def.render(setting);
     }
+    this.progressEl = containerEl.createDiv({ cls: "video-subtitles-batch-progress" });
+    this.unsubscribe = this.host.createQueue.subscribe(() => this.paintProgress());
+    this.paintProgress();
+  }
+
+  hide(): void {
+    this.unsubscribe?.();
+    this.unsubscribe = null;
+    this.progressEl = null;
+    super.hide();
   }
 
   getSettingDefinitions() {
@@ -145,7 +161,51 @@ export class VideoSubtitlesSettingTab extends PluginSettingTab {
             });
           });
         }
+      },
+      {
+        name: "Process all videos",
+        desc: "Transcribe every video in the vault. This can take a long time.",
+        render: (setting: Setting) => {
+          setting.addButton((button) =>
+            button.setButtonText("Process all videos").onClick(() => {
+              void this.startBatch();
+            })
+          );
+        }
       }
     ];
+  }
+
+  private paintProgress(): void {
+    if (!this.progressEl) return;
+    paintBatchProgress(this.progressEl, this.host.createQueue.snapshot());
+  }
+
+  private async startBatch(): Promise<void> {
+    if (!Platform.isDesktopApp) {
+      new Notice("Creating subtitles needs desktop Obsidian.");
+      return;
+    }
+    if (this.host.createQueue.running) {
+      new Notice("Already processing videos.");
+      return;
+    }
+    const files = vaultVideoFiles(this.app.vault.getFiles());
+    if (files.length === 0) {
+      new Notice("No videos in the vault.");
+      return;
+    }
+    const confirmed = await confirmProcessAll(this.app, files.length);
+    if (!confirmed) return;
+    if (!this.host.subtitleSettings.accuracyInitialized) {
+      try {
+        this.host.subtitleSettings.transcriberAccuracy = pickAccuracyForHardware(readHardware());
+        this.host.subtitleSettings.accuracyInitialized = true;
+        await this.host.saveSettings();
+      } catch (error) {
+        console.error(error);
+      }
+    }
+    this.host.createQueue.start(files, true);
   }
 }
