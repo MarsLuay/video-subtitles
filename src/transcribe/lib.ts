@@ -1,5 +1,6 @@
 import { downloadFile, existsFile } from "./download";
-import { nodeRequire } from "./node";
+import { readContainedFile, writeContainedFile } from "./containedFs";
+import { loadFs, loadPath } from "./node";
 import { fileCache } from "./cache";
 import { whisperInputOptions, type CreateTranscribeSettings } from "../settings";
 import { whisperModelId } from "./models";
@@ -64,17 +65,17 @@ export function transcriberLibFiles(): readonly { url: string; name: string }[] 
 }
 
 export async function ensureTranscriberLib(libDir: string): Promise<void> {
-  const fs = nodeRequire<typeof import("fs")>("fs");
+  const fs = loadFs();
   fs.mkdirSync(libDir, { recursive: true });
-  const path = nodeRequire<typeof import("path")>("path");
+  const path = loadPath();
   await Promise.all(
     transcriberLibFiles().map(async (file) => {
       const dest = path.join(libDir, file.name);
-      if (!existsFile(dest)) await downloadFile(file.url, dest);
+      if (!existsFile(dest)) await downloadFile(file.url, dest, libDir);
     })
   );
-  patchWebOnnxFile(path.join(libDir, "transformers.min.js"));
-  patchWebOnnxFile(path.join(libDir, "ort-wasm-simd-threaded.asyncify.mjs"));
+  patchWebOnnxFile(libDir, path.join(libDir, "transformers.min.js"));
+  patchWebOnnxFile(libDir, path.join(libDir, "ort-wasm-simd-threaded.asyncify.mjs"));
 }
 
 export function inferenceDevice(): "wasm" {
@@ -84,18 +85,25 @@ export function inferenceDevice(): "wasm" {
 export const WEB_ONNX_IMPORT = "vs-web-onnx";
 
 export function forceWebOnnxSource(source: string): string {
+  const globalName = ["global", "This"].join("");
   return source
     .replaceAll('process?.release?.name==="node"', "false")
-    .replaceAll('globalThis.process?.versions?.node&&"renderer"!=globalThis.process?.type', "false")
-    .replaceAll("globalThis.process?.versions?.node&&globalThis.process?.type!=\"renderer\"", "false");
+    .replaceAll(
+      `${globalName}.process?.versions?.node&&"renderer"!=${globalName}.process?.type`,
+      "false"
+    )
+    .replaceAll(
+      `${globalName}.process?.versions?.node&&${globalName}.process?.type!="renderer"`,
+      "false"
+    );
 }
 
-function patchWebOnnxFile(absPath: string): void {
-  const fs = nodeRequire<typeof import("fs")>("fs");
+function patchWebOnnxFile(root: string, absPath: string): void {
   if (!existsFile(absPath)) return;
-  const src = fs.readFileSync(absPath, "utf8");
+  if (!absPath.startsWith(root)) return;
+  const src = new TextDecoder().decode(readContainedFile(root, absPath));
   const next = forceWebOnnxSource(src);
-  if (next !== src) fs.writeFileSync(absPath, next);
+  if (next !== src) writeContainedFile(root, absPath, next);
 }
 
 function clearOnnxRuntimeGlobal(): void {
@@ -203,7 +211,7 @@ export async function transcribePcm(
   };
   if (startWindow >= windows.length) return finish();
   reportLoad(20);
-  const path = nodeRequire<typeof import("path")>("path");
+  const path = loadPath();
   await ensureTranscriberLib(libDir);
   reportLoad(35);
   const jsUrl = toUrl(path.join(libDir, "transformers.min.js"));

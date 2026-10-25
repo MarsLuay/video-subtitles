@@ -1,4 +1,5 @@
 import { Modal, Notice, type App } from "obsidian";
+import { bindDom } from "./bindDom";
 import {
   formatClockTime,
   parseCreateRange,
@@ -19,6 +20,7 @@ class CreateRangeModal extends Modal {
   private settled = false;
   private startEl: HTMLInputElement | null = null;
   private endEl: HTMLInputElement | null = null;
+  private focusTimer = 0;
 
   constructor(
     app: App,
@@ -39,19 +41,20 @@ class CreateRangeModal extends Modal {
     this.endEl = this.addTimeRow("End", formatClockTime(this.durationSec));
     const actions = this.contentEl.createDiv({ cls: "modal-button-container" });
     const cancel = actions.createEl("button", { text: "Cancel" });
-    cancel.addEventListener("click", () => this.finish(null));
+    bindDom(this, cancel, "click", () => this.finish(null));
     const create = actions.createEl("button", { text: "Create", cls: "mod-cta" });
-    create.addEventListener("click", () => this.submit());
-    this.contentEl.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        this.submit();
-      }
+    bindDom(this, create, "click", () => this.submit());
+    bindDom(this, this.contentEl, "keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      this.submit();
     });
-    window.setTimeout(() => this.startEl?.focus(), 0);
+    this.focusTimer = window.setTimeout(() => this.startEl?.focus(), 0);
   }
 
   onClose(): void {
+    window.clearTimeout(this.focusTimer);
+    this.focusTimer = 0;
     if (!this.settled) {
       this.settled = true;
       this.done(null);
@@ -70,7 +73,7 @@ class CreateRangeModal extends Modal {
     });
     input.value = value;
     const current = row.createEl("button", { text: "Current" });
-    current.addEventListener("click", (event) => {
+    bindDom(this, current, "click", (event) => {
       event.preventDefault();
       input.value = formatClockTime(this.currentTime());
       input.focus();

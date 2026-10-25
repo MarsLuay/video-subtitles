@@ -1,3 +1,5 @@
+const DEFAULT_SETTINGS = {};
+
 export class Plugin {
   app: { workspace: { containerEl: HTMLElement }; vault: Record<string, unknown> };
   manifest: { id: string; version: string; dir?: string };
@@ -10,13 +12,22 @@ export class Plugin {
   }
   addCommand(): void {}
   addSettingTab(): void {}
-  async loadData(): Promise<unknown> {
-    return {};
+  loadData(): Promise<unknown> {
+    return Promise.resolve({ ...DEFAULT_SETTINGS });
   }
   async saveData(_data: unknown): Promise<void> {}
+  addChild(_child: Component): void {}
+  removeChild(_child: Component): void {}
   register(): void {}
   registerEvent(): void {}
   registerDomEvent(): void {}
+}
+
+export class Component {
+  register(): void {}
+  registerEvent(): void {}
+  registerDomEvent(): void {}
+  unload(): void {}
 }
 
 export class Notice {
@@ -60,6 +71,9 @@ export class Modal {
   }
   onOpen(): void {}
   onClose(): void {}
+  registerDomEvent(el: HTMLElement, type: string, listener: EventListener): void {
+    el.addEventListener(type, listener);
+  }
 }
 
 export class PluginSettingTab {

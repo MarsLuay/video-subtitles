@@ -31,6 +31,7 @@ import {
   overallRemainingSec,
   vaultVideoFiles
 } from "../src/transcribe/batch";
+import { containedPath } from "../src/transcribe/containedFs";
 import { shouldRemoveTranscriberOnUnload, transcriberCleanupPath } from "../src/transcribe/runtime";
 import {
   formatCreateProgress,
@@ -155,9 +156,9 @@ describe("subtitle settings", () => {
     const host = {
       app: { workspace: { containerEl: document.createElement("div") }, vault: {} },
       subtitleSettings: { ...DEFAULT_SETTINGS } satisfies VideoSubtitleSettings,
-      saveSettings: async () => undefined,
+      saveSettings: () => Promise.resolve(),
       createQueue: { running: false, snapshot: idleQueueSnapshot, subscribe: () => () => undefined, start: () => undefined, prioritize: () => "queued" },
-      applyGenerated: async () => false
+      applyGenerated: () => Promise.resolve(false)
     } as unknown as SettingsHost;
     const tab = new VideoSubtitlesSettingTab(host.app, host);
     expect(tab.getSettingDefinitions().map((def) => def.name)).toEqual([
@@ -334,6 +335,32 @@ describe("create progress", () => {
     expect(ticks.length).toBeGreaterThan(0);
     expect(ticks[0]).toBeGreaterThan(58);
     expect(ticks.at(-1)).toBeLessThan(94);
+  });
+});
+
+describe("contained filesystem paths", () => {
+  it("keeps reads inside the transcriber root and rejects parent escape", async () => {
+    const nodePath = await import("node:path");
+    const win = window as unknown as { require?: (id: string) => unknown };
+    const previous = win.require;
+    win.require = (id: string) => {
+      if (id === "path") return nodePath;
+      throw new Error(id);
+    };
+    try {
+      expect(containedPath("/plugin/transcriber", "/plugin/transcriber/lib/model.bin")).toBe(
+        "/plugin/transcriber/lib/model.bin"
+      );
+      expect(() => containedPath("/plugin/transcriber", "/plugin/transcriber/../secrets.txt")).toThrow(
+        "path escapes root"
+      );
+      expect(() => containedPath("/plugin/transcriber", "/plugin/transcriber-evil/x")).toThrow(
+        "path escapes root"
+      );
+    } finally {
+      if (previous) win.require = previous;
+      else delete win.require;
+    }
   });
 });
 

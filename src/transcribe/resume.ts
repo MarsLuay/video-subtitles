@@ -1,6 +1,7 @@
 import { WHISPER_CHUNK_SECONDS, WHISPER_SAMPLE_RATE, WHISPER_STRIDE_SECONDS } from "./audio";
+import { readContainedFile, writeContainedFile } from "./containedFs";
 import { existsFile, removePath } from "./download";
-import { nodeRequire } from "./node";
+import { loadFs, loadPath } from "./node";
 import type { CreateTranscribeSettings } from "../settings";
 import type { SubtitleCue } from "../subtitles/cues";
 import { fullRangeFromPcm, rangeToMs, type TranscribeRange } from "./range";
@@ -124,22 +125,23 @@ export function resumeMatches(saved: unknown, job: CreateResumeJob): saved is Cr
   );
 }
 
-export function readCreateResume(file: string): CreateResumeState | null {
+export function readCreateResume(root: string, file: string): CreateResumeState | null {
   if (!existsFile(file)) return null;
   try {
-    const fs = nodeRequire<typeof import("fs")>("fs");
-    return parseResumeState(JSON.parse(fs.readFileSync(file, "utf8")));
+    if (!file.startsWith(root)) return null;
+    return parseResumeState(JSON.parse(new TextDecoder().decode(readContainedFile(root, file))));
   } catch {
     return null;
   }
 }
 
-export function writeCreateResume(file: string, state: CreateResumeState): void {
-  const fs = nodeRequire<typeof import("fs")>("fs");
-  const path = nodeRequire<typeof import("path")>("path");
+export function writeCreateResume(root: string, file: string, state: CreateResumeState): void {
+  const fs = loadFs();
+  const path = loadPath();
+  if (!file.startsWith(root)) throw new Error("path escapes root");
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(state));
+  writeContainedFile(root, tmp, JSON.stringify(state));
   if (existsFile(file)) fs.unlinkSync(file);
   fs.renameSync(tmp, file);
 }

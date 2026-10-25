@@ -1,5 +1,5 @@
 import { chmod755, downloadFile, existsFile, gunzipFile, removePath } from "./download";
-import { nodeRequire } from "./node";
+import { loadChildProcess, loadOs, loadPath } from "./node";
 
 export const FFMPEG_RELEASE = "b6.1.1";
 
@@ -28,22 +28,22 @@ export function ffmpegAsset(
 }
 
 export async function ensureFfmpeg(binDir: string, platform = "", arch = ""): Promise<string> {
-  const os = nodeRequire<typeof import("os")>("os");
-  const path = nodeRequire<typeof import("path")>("path");
+  const os = loadOs();
+  const path = loadPath();
   const asset = ffmpegAsset(platform || os.platform(), arch || os.arch());
   if (!asset) throw new Error("No ffmpeg build for this computer");
   const binary = path.join(binDir, asset.binary);
   if (existsFile(binary)) return binary;
   const archive = path.join(binDir, asset.archive);
-  await downloadFile(asset.url, archive);
-  gunzipFile(archive, binary);
+  await downloadFile(asset.url, archive, binDir);
+  gunzipFile(archive, binary, binDir);
   removePath(archive);
   chmod755(binary);
   return binary;
 }
 
 export async function extractWav(ffmpeg: string, videoPath: string, wavPath: string): Promise<void> {
-  const child = nodeRequire<typeof import("child_process")>("child_process");
+  const child = loadChildProcess();
   await new Promise<void>((resolve, reject) => {
     const proc = child.spawn(
       ffmpeg,

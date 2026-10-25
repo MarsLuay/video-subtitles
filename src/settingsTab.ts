@@ -2,6 +2,7 @@ import { Notice, Platform, PluginSettingTab, Setting } from "obsidian";
 import type { VideoSubtitlesHost } from "./pluginHost";
 import {
   ACCURACY_LABELS,
+  DEFAULT_SETTINGS,
   LANGUAGE_LABELS,
   MAX_SPEAKERS,
   TRANSCRIBER_ACCURACY,
@@ -10,7 +11,8 @@ import {
   isTranscriberAccuracy,
   isTranscriberLanguage
 } from "./settings";
-import { vaultVideoFiles } from "./transcribe/batch";
+import { isEncryptedVaultPath } from "./transcribe/batch";
+import { isVideoExtension } from "./videoFileTypes";
 import { pickAccuracyForHardware } from "./transcribe/hardware";
 import { readHardware } from "./transcribe/node";
 import { paintBatchProgress } from "./ui/batchProgress";
@@ -57,7 +59,7 @@ export class VideoSubtitlesSettingTab extends PluginSettingTab {
         desc: "Keep the downloaded transcriber so creating subtitles does not fetch it again. Turned on by default.",
         render: (setting: Setting) => {
           setting.addToggle((toggle) =>
-            toggle.setValue(this.host.subtitleSettings.keepTranscriber).onChange(async (value) => {
+            toggle.setValue(this.host.subtitleSettings.keepTranscriber ?? DEFAULT_SETTINGS.keepTranscriber).onChange(async (value) => {
               this.host.subtitleSettings.keepTranscriber = value;
               await this.host.saveSettings();
             })
@@ -190,7 +192,9 @@ export class VideoSubtitlesSettingTab extends PluginSettingTab {
       new Notice("Already processing videos.");
       return;
     }
-    const files = vaultVideoFiles(this.app.vault.getFiles());
+    const files = this.app.vault.getFiles().filter(
+      (file) => isVideoExtension(file.extension) && !isEncryptedVaultPath(file.path)
+    );
     if (files.length === 0) {
       new Notice("No videos in the vault.");
       return;

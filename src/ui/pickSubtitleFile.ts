@@ -20,15 +20,15 @@ export function pickSubtitleFile(doc: Document): Promise<PickedSubtitleFile | nu
       input.detach();
       resolve(value);
     };
-    input.addEventListener("change", () => {
+    input.onchange = () => {
       const file = input.files?.item(0);
       if (!file) {
         finish(null);
         return;
       }
       void file.text().then((text) => finish({ name: file.name, text })).catch(() => finish(null));
-    });
-    input.addEventListener("cancel", () => finish(null));
+    };
+    input.oncancel = () => finish(null);
     input.click();
   });
 }

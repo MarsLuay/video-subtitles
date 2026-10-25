@@ -9,7 +9,8 @@
     "build": "tsc --noEmit && node esbuild.config.mjs production",
     "lint": "eslint \"src/**/*.ts\" --max-warnings=0",
     "test": "vitest run --config vitest.config.ts",
-    "test:watch": "vitest --config vitest.config.ts"
+    "test:watch": "vitest --config vitest.config.ts",
+    "smoke": "vitest run --config vitest.config.ts tests/menu-model.test.ts tests/format-vtt.test.ts tests/caption-overlay.test.ts"
   },
   "keywords": [
     "obsidian",
@@ -22,14 +23,18 @@
     "@types/node": "^26.1.1",
     "esbuild": "^0.28.1",
     "eslint": "^10.8.0",
-    "eslint-plugin-obsidianmd": "^0.4.1",
+    "eslint-plugin-obsidianmd": "^0.4.2",
     "jsdom": "^29.1.1",
-    "obsidian": "latest",
+    "obsidian": "1.14.4",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.65.0",
     "vitest": "^4.1.10"
   },
   "allowScripts": {
     "esbuild@0.28.2": true
+  },
+  "overrides": {
+    "moment": "2.31.0",
+    "obsidian": "1.14.4"
   }
 }

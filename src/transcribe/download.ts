@@ -1,12 +1,14 @@
-import { nodeRequire } from "./node";
+import { containedPath, readContainedFile, writeContainedFile } from "./containedFs";
+import { loadFs, loadHttp, loadHttps, loadOs, loadPath, loadZlib } from "./node";
 
-export async function downloadFile(url: string, dest: string): Promise<void> {
-  const fs = nodeRequire<typeof import("fs")>("fs");
-  const path = nodeRequire<typeof import("path")>("path");
-  const https = nodeRequire<typeof import("https")>("https");
-  const http = nodeRequire<typeof import("http")>("http");
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-  const tmp = `${dest}.part`;
+export async function downloadFile(url: string, dest: string, root: string): Promise<void> {
+  const fs = loadFs();
+  const path = loadPath();
+  const https = loadHttps();
+  const http = loadHttp();
+  const file = containedPath(root, dest);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.part`;
   await new Promise<void>((resolve, reject) => {
     const follow = (target: string, hops: number): void => {
       if (hops > 8) {
@@ -38,30 +40,29 @@ export async function downloadFile(url: string, dest: string): Promise<void> {
     };
     follow(url, 0);
   });
-  if (fs.existsSync(dest)) fs.unlinkSync(dest);
-  fs.renameSync(tmp, dest);
+  if (fs.existsSync(file)) fs.unlinkSync(file);
+  fs.renameSync(tmp, file);
 }
 
-export function gunzipFile(src: string, dest: string): void {
-  const fs = nodeRequire<typeof import("fs")>("fs");
-  const zlib = nodeRequire<typeof import("zlib")>("zlib");
-  const bytes = zlib.gunzipSync(fs.readFileSync(src));
-  fs.writeFileSync(dest, bytes);
+export function gunzipFile(src: string, dest: string, root: string): void {
+  const zlib = loadZlib();
+  const from = containedPath(root, src);
+  const to = containedPath(root, dest);
+  const bytes = zlib.gunzipSync(readContainedFile(root, from));
+  writeContainedFile(root, to, bytes);
 }
 
 export function chmod755(file: string): void {
-  const fs = nodeRequire<typeof import("fs")>("fs");
-  const os = nodeRequire<typeof import("os")>("os");
+  const fs = loadFs();
+  const os = loadOs();
   if (os.platform() === "win32") return;
   fs.chmodSync(file, 0o755);
 }
 
 export function removePath(target: string): void {
-  const fs = nodeRequire<typeof import("fs")>("fs");
-  fs.rmSync(target, { recursive: true, force: true });
+  loadFs().rmSync(target, { recursive: true, force: true });
 }
 
 export function existsFile(target: string): boolean {
-  const fs = nodeRequire<typeof import("fs")>("fs");
-  return fs.existsSync(target);
+  return loadFs().existsSync(target);
 }

@@ -1,4 +1,4 @@
-import { Menu, Notice, Platform, TFile } from "obsidian";
+import { Component, Menu, Notice, Platform, TFile } from "obsidian";
 import type { VideoSubtitlesHost } from "../pluginHost";
 import { spliceGeneratedTrack, upsertGeneratedTrack } from "../subtitles/generatedTrack";
 import { writeGeneratedCues } from "../subtitles/writeGenerated";
@@ -45,7 +45,7 @@ function formatError(error: unknown): string {
   }
 }
 
-class VideoSession {
+class VideoSession extends Component {
   private store: AbsorbedStore = emptyStore();
   private file: TFile | null = null;
   private idleTimer = 0;
@@ -65,8 +65,10 @@ class VideoSession {
     private readonly plugin: VideoSubtitlesHost,
     private readonly video: HTMLVideoElement
   ) {
+    super();
     const parent = video.parentElement;
     if (!parent) throw new Error("video has no host");
+    this.plugin.addChild(this);
     this.player = parent.createDiv({ cls: "video-subtitles-player" });
     parent.insertBefore(this.player, video);
     this.player.appendChild(video);
@@ -90,22 +92,22 @@ class VideoSession {
     this.syncHitSize();
     this.resizeObserver = new ResizeObserver(() => this.syncHitSize());
     this.resizeObserver.observe(this.video);
-    this.video.addEventListener("timeupdate", this.onTime);
-    this.video.addEventListener("seeked", this.onTime);
-    this.video.addEventListener("loadedmetadata", this.onLoaded);
-    this.video.addEventListener("play", this.armHit);
-    this.video.addEventListener("pause", this.armHit);
-    this.video.addEventListener("dblclick", this.onVideoDblClick, true);
-    this.video.addEventListener("pointerdown", this.onVideoHitPointer, true);
-    this.video.addEventListener("mousedown", this.onVideoHitPointer, true);
-    this.video.addEventListener("click", this.onVideoHitClick, true);
+    this.registerDomEvent(this.video, "timeupdate", this.onTime);
+    this.registerDomEvent(this.video, "seeked", this.onTime);
+    this.registerDomEvent(this.video, "loadedmetadata", this.onLoaded);
+    this.registerDomEvent(this.video, "play", this.armHit);
+    this.registerDomEvent(this.video, "pause", this.armHit);
+    this.registerDomEvent(this.video, "dblclick", this.onVideoDblClick, true);
+    this.registerDomEvent(this.video, "pointerdown", this.onVideoHitPointer, true);
+    this.registerDomEvent(this.video, "mousedown", this.onVideoHitPointer, true);
+    this.registerDomEvent(this.video, "click", this.onVideoHitClick, true);
     this.bindHit(this.hitEl, this.onHitClick);
     this.bindHit(this.fsHitEl, this.onFullscreenHitClick);
-    this.player.addEventListener("mousemove", this.onPlayerMove);
-    this.player.addEventListener("mouseleave", this.onPlayerLeave);
+    this.registerDomEvent(this.player, "mousemove", this.onPlayerMove);
+    this.registerDomEvent(this.player, "mouseleave", this.onPlayerLeave);
     const doc = this.video.ownerDocument;
-    doc.addEventListener("fullscreenchange", this.onFullscreenChange);
-    doc.addEventListener("webkitfullscreenchange", this.onFullscreenChange);
+    this.registerDomEvent(doc, "fullscreenchange", this.onFullscreenChange);
+    this.registerDomEvent(doc, "webkitfullscreenchange" as "fullscreenchange", this.onFullscreenChange);
     this.armHit();
   }
 
@@ -130,23 +132,8 @@ class VideoSession {
     this.player.win.clearTimeout(this.idleTimer);
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
-    this.video.removeEventListener("timeupdate", this.onTime);
-    this.video.removeEventListener("seeked", this.onTime);
-    this.video.removeEventListener("loadedmetadata", this.onLoaded);
-    this.video.removeEventListener("play", this.armHit);
-    this.video.removeEventListener("pause", this.armHit);
-    this.video.removeEventListener("dblclick", this.onVideoDblClick, true);
-    this.video.removeEventListener("pointerdown", this.onVideoHitPointer, true);
-    this.video.removeEventListener("mousedown", this.onVideoHitPointer, true);
-    this.video.removeEventListener("click", this.onVideoHitClick, true);
-    this.unbindHit(this.hitEl, this.onHitClick);
-    this.unbindHit(this.fsHitEl, this.onFullscreenHitClick);
-    this.player.removeEventListener("mousemove", this.onPlayerMove);
-    this.player.removeEventListener("mouseleave", this.onPlayerLeave);
-    const doc = this.video.ownerDocument;
-    doc.removeEventListener("fullscreenchange", this.onFullscreenChange);
-    doc.removeEventListener("webkitfullscreenchange", this.onFullscreenChange);
     this.unbindVideoFullscreen();
+    this.plugin.removeChild(this);
     this.hitEl.detach();
     this.fsHitEl.detach();
     this.cuesEl.detach();
@@ -220,7 +207,7 @@ class VideoSession {
     return kind;
   }
 
-  private readonly onVideoHitPointer = (event: Event): void => {
+  private readonly onVideoHitPointer = (event: MouseEvent): void => {
     this.stealControlEvent(event, false);
   };
 
@@ -231,18 +218,12 @@ class VideoSession {
   };
 
   private bindHit(el: HTMLElement, onClick: (event: MouseEvent) => void): void {
-    el.addEventListener("pointerdown", this.onHitPointer);
-    el.addEventListener("mousedown", this.onHitPointer);
-    el.addEventListener("click", onClick);
+    this.registerDomEvent(el, "pointerdown", this.onHitPointer);
+    this.registerDomEvent(el, "mousedown", this.onHitPointer);
+    this.registerDomEvent(el, "click", onClick);
   }
 
-  private unbindHit(el: HTMLElement, onClick: (event: MouseEvent) => void): void {
-    el.removeEventListener("pointerdown", this.onHitPointer);
-    el.removeEventListener("mousedown", this.onHitPointer);
-    el.removeEventListener("click", onClick);
-  }
-
-  private readonly onHitPointer = (event: Event): void => {
+  private readonly onHitPointer = (event: MouseEvent): void => {
     event.stopPropagation();
   };
 
@@ -514,10 +495,9 @@ class VideoSession {
       this.video.currentTime = time;
       this.video.playbackRate = rate;
       if (!paused) void this.video.play();
-      this.video.removeEventListener("loadedmetadata", resume);
       this.paintCues();
     };
-    this.video.addEventListener("loadedmetadata", resume);
+    this.registerDomEvent(this.video, "loadedmetadata", resume, { once: true });
     this.video.src = this.plugin.app.vault.getResourcePath(file);
   }
 }

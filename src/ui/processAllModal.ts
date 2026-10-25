@@ -1,4 +1,5 @@
 import { Modal, type App } from "obsidian";
+import { bindDom } from "./bindDom";
 
 export function confirmProcessAll(app: App, count: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -26,9 +27,9 @@ class ProcessAllModal extends Modal {
     });
     const actions = this.contentEl.createDiv({ cls: "modal-button-container" });
     const cancel = actions.createEl("button", { text: "Cancel" });
-    cancel.addEventListener("click", () => this.finish(false));
+    bindDom(this, cancel, "click", () => this.finish(false));
     const process = actions.createEl("button", { text: "Process all videos", cls: "mod-cta" });
-    process.addEventListener("click", () => this.finish(true));
+    bindDom(this, process, "click", () => this.finish(true));
   }
 
   onClose(): void {

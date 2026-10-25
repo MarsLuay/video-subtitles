@@ -20,7 +20,7 @@ function sourcePathFor(app: App, video: HTMLVideoElement): string {
 
 export function resolveVideoFile(app: App, video: HTMLVideoElement): TFile | null {
   const embed = video.closest(".internal-embed, .media-embed, .video-embed");
-  if (embed instanceof HTMLElement) {
+  if (embed?.instanceOf(HTMLElement)) {
     const src = embed.getAttr("src") ?? embed.getAttr("alt") ?? "";
     const link = src.split(/[?#]/)[0] ?? "";
     if (link) {

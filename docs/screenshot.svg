@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360" role="img" aria-label="Video player more-options menu with Off, Create, and Import">
+  <rect width="640" height="360" fill="#1e1e1e"/>
+  <rect x="24" y="24" width="592" height="312" rx="8" fill="#111"/>
+  <text x="40" y="56" fill="#ddd" font-family="sans-serif" font-size="16">Lecture clip.mp4</text>
+  <rect x="40" y="280" width="560" height="8" rx="4" fill="#333"/>
+  <rect x="40" y="280" width="180" height="8" rx="4" fill="#7f6df2"/>
+  <circle cx="568" cy="300" r="14" fill="#2a2a2a" stroke="#888"/>
+  <circle cx="568" cy="294" r="1.6" fill="#eee"/>
+  <circle cx="568" cy="300" r="1.6" fill="#eee"/>
+  <circle cx="568" cy="306" r="1.6" fill="#eee"/>
+  <rect x="400" y="148" width="200" height="132" rx="8" fill="#252525" stroke="#555"/>
+  <text x="416" y="176" fill="#eee" font-family="sans-serif" font-size="14">Off</text>
+  <text x="416" y="208" fill="#eee" font-family="sans-serif" font-size="14">Create</text>
+  <text x="416" y="240" fill="#eee" font-family="sans-serif" font-size="14">Import</text>
+</svg>

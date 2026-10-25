@@ -9,7 +9,9 @@ function addMeter(parent: HTMLElement, label: string, percent: number): void {
   row.createDiv({ cls: "video-subtitles-batch-label", text: label });
   const track = row.createDiv({ cls: "video-subtitles-progress-meter" });
   const fill = track.createDiv({ cls: "video-subtitles-progress-meter-fill" });
-  fill.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+  fill.setCssProps({
+    "--video-subtitles-progress": `${Math.max(0, Math.min(100, percent))}%`
+  });
 }
 
 export function paintBatchProgress(host: HTMLElement, snapshot: CreateQueueSnapshot): void {
