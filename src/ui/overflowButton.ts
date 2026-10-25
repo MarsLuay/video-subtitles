@@ -70,6 +70,17 @@ export function shouldStealControlClick(
   return kind !== null && overflowControlsVisible(paused, hovering);
 }
 
+/** Keep overlay buttons glued to the video when the fullscreen player is larger than the video box. */
+export function overlayInsets(
+  player: { right: number; bottom: number },
+  video: { right: number; bottom: number }
+): { right: number; bottom: number } {
+  return {
+    right: Math.max(0, player.right - video.right),
+    bottom: Math.max(0, player.bottom - video.bottom)
+  };
+}
+
 export function measureOverflowHit(video: HTMLVideoElement): OverflowHitBox {
   const fallback: OverflowHitBox = {
     width: FALLBACK_OVERFLOW_BUTTON,

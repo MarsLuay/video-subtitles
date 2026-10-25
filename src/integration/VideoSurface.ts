@@ -14,6 +14,7 @@ import {
   hitControlKind,
   measureFullscreenHit,
   measureOverflowHit,
+  overlayInsets,
   shouldStealControlClick
 } from "../ui/overflowButton";
 import {
@@ -88,7 +89,10 @@ class VideoSession extends Component {
         "aria-label": "Full screen"
       }
     });
-    if (DEBUG_SHOW_OVERFLOW_HIT) this.hitEl.addClass("is-debug");
+    if (DEBUG_SHOW_OVERFLOW_HIT) {
+      this.hitEl.addClass("is-debug");
+      this.fsHitEl.addClass("is-debug");
+    }
     this.bindVideoFullscreen();
     this.syncHitSize();
     this.resizeObserver = new ResizeObserver(() => this.syncHitSize());
@@ -101,12 +105,16 @@ class VideoSession extends Component {
     this.registerDomEvent(this.video, "dblclick", this.onVideoDblClick, true);
     this.registerDomEvent(this.video, "pointerdown", this.onVideoHitPointer, true);
     this.registerDomEvent(this.video, "mousedown", this.onVideoHitPointer, true);
+    this.registerDomEvent(this.video, "pointermove", this.onPlayerMove);
     this.registerDomEvent(this.video, "click", this.onVideoHitClick, true);
     this.bindHit(this.hitEl, this.onHitClick);
     this.bindHit(this.fsHitEl, this.onFullscreenHitClick);
     this.registerDomEvent(this.player, "mousemove", this.onPlayerMove);
     this.registerDomEvent(this.player, "mouseleave", this.onPlayerLeave);
     const doc = this.video.ownerDocument;
+    this.registerDomEvent(doc, "pointerdown", this.onFullscreenDocPointer, true);
+    this.registerDomEvent(doc, "mousedown", this.onFullscreenDocPointer, true);
+    this.registerDomEvent(doc, "click", this.onFullscreenDocClick, true);
     this.registerDomEvent(doc, "fullscreenchange", this.onFullscreenChange);
     this.registerDomEvent(doc, "webkitfullscreenchange" as "fullscreenchange", this.onFullscreenChange);
     this.armHit();
@@ -151,15 +159,16 @@ class VideoSession extends Component {
   private syncHitSize(): void {
     const box = measureOverflowHit(this.video);
     const fullscreen = measureFullscreenHit(this.video);
+    const inset = overlayInsets(this.player.getBoundingClientRect(), this.video.getBoundingClientRect());
     this.player.setCssProps({
       "--video-subtitles-hit-width": `${box.width}px`,
       "--video-subtitles-hit-height": `${box.height}px`,
-      "--video-subtitles-hit-right": `${box.right}px`,
-      "--video-subtitles-hit-bottom": `${box.bottom}px`,
+      "--video-subtitles-hit-right": `${box.right + inset.right}px`,
+      "--video-subtitles-hit-bottom": `${box.bottom + inset.bottom}px`,
       "--video-subtitles-fs-width": `${fullscreen.width}px`,
       "--video-subtitles-fs-height": `${fullscreen.height}px`,
-      "--video-subtitles-fs-right": `${fullscreen.right}px`,
-      "--video-subtitles-fs-bottom": `${fullscreen.bottom}px`
+      "--video-subtitles-fs-right": `${fullscreen.right + inset.right}px`,
+      "--video-subtitles-fs-bottom": `${fullscreen.bottom + inset.bottom}px`
     });
   }
 
@@ -182,10 +191,23 @@ class VideoSession extends Component {
     this.armHit();
   };
 
-  private readonly onPlayerLeave = (): void => {
+  private readonly onPlayerLeave = (event: MouseEvent): void => {
+    const next = event.relatedTarget;
+    if (next instanceof Node && this.player.contains(next)) return;
+    if (isPlayerFullscreen(this.video.ownerDocument, this.player) && !(next instanceof Node)) return;
     this.hovering = false;
     if (!this.video.paused) this.setHitsIdle(true);
   };
+
+  private isHitTarget(event: Event): boolean {
+    return event.target === this.hitEl || event.target === this.fsHitEl;
+  }
+
+  private shouldStealFrom(event: Event): boolean {
+    if (this.isHitTarget(event)) return false;
+    const target = event.target;
+    return !(target instanceof Element && target.closest(".menu"));
+  }
 
   private controlKind(event: MouseEvent): "overflow" | "fullscreen" | null {
     const rect = this.video.getBoundingClientRect();
@@ -209,13 +231,27 @@ class VideoSession extends Component {
   }
 
   private readonly onVideoHitPointer = (event: MouseEvent): void => {
+    this.hovering = true;
+    this.armHit();
+    if (!this.shouldStealFrom(event)) return;
     this.stealControlEvent(event, false);
   };
 
   private readonly onVideoHitClick = (event: MouseEvent): void => {
+    if (!this.shouldStealFrom(event)) return;
     const kind = this.stealControlEvent(event, true);
     if (kind === "overflow") this.openMenu(event);
     if (kind === "fullscreen") void this.togglePlayerFullscreen();
+  };
+
+  private readonly onFullscreenDocPointer = (event: MouseEvent): void => {
+    if (!isPlayerFullscreen(this.video.ownerDocument, this.player)) return;
+    this.onVideoHitPointer(event);
+  };
+
+  private readonly onFullscreenDocClick = (event: MouseEvent): void => {
+    if (!isPlayerFullscreen(this.video.ownerDocument, this.player)) return;
+    this.onVideoHitClick(event);
   };
 
   private bindHit(el: HTMLElement, onClick: (event: MouseEvent) => void): void {
@@ -534,11 +570,23 @@ export class VideoSurfaceManager {
   }
 
   private workspaceVideos(): HTMLVideoElement[] {
-    const videos: HTMLVideoElement[] = [];
+    const videos = new Set<HTMLVideoElement>();
+    const docs = new Set<Document>();
     this.plugin.app.workspace.iterateAllLeaves((leaf) => {
-      videos.push(...Array.from(leaf.view.containerEl.querySelectorAll("video")));
+      docs.add(leaf.view.containerEl.ownerDocument);
+      for (const video of leaf.view.containerEl.querySelectorAll("video")) {
+        videos.add(video);
+      }
     });
-    return videos;
+    for (const doc of docs) {
+      const full = currentFullscreenElement(doc);
+      if (!full) continue;
+      if (full.tagName === "VIDEO") videos.add(full as HTMLVideoElement);
+      else {
+        for (const video of full.querySelectorAll("video")) videos.add(video);
+      }
+    }
+    return [...videos];
   }
 
   private watchDocuments(): void {

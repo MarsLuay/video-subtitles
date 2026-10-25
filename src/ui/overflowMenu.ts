@@ -83,7 +83,16 @@ export function openOverflowMenu(options: {
     ? options.event.target.ownerDocument
     : options.event.view?.document) ?? undefined;
   menu.showAtPosition({ x: options.event.clientX, y: options.event.clientY }, doc);
+  mountMenuInParent(options.parent);
   return menu;
+}
+
+/** Fullscreen top layer hides body menus; keep the overflow list inside the player. */
+export function mountMenuInParent(parent: HTMLElement | undefined): void {
+  if (!parent) return;
+  const menus = parent.ownerDocument.body.querySelectorAll(":scope > .menu");
+  const menuEl = menus.item(menus.length - 1);
+  if (menuEl?.instanceOf(HTMLElement)) parent.append(menuEl);
 }
 
 export function toggleOverflowMenu(

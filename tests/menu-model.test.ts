@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Menu } from "obsidian";
 import { buildSubtitleMenuRows, playbackSpeedLabel } from "../src/ui/menuModel";
-import { toggleOverflowMenu } from "../src/ui/overflowMenu";
+import { mountMenuInParent, toggleOverflowMenu } from "../src/ui/overflowMenu";
 import {
   DEBUG_SHOW_OVERFLOW_HIT,
   FALLBACK_OVERFLOW_BUTTON,
@@ -10,6 +10,7 @@ import {
   isOverflowButtonHit,
   measureFullscreenHit,
   measureOverflowHit,
+  overlayInsets,
   overflowControlsVisible,
   shouldStealControlClick
 } from "../src/ui/overflowButton";
@@ -47,6 +48,19 @@ describe("player overflow 3-dot", () => {
     expect(hitControlKind(bounds, 200, 200, overflow, fullscreen)).toBeNull();
     expect(shouldStealControlClick(false, true, "overflow")).toBe(true);
     expect(shouldStealControlClick(false, false, "overflow")).toBe(false);
+    expect(shouldStealControlClick(false, true, "fullscreen")).toBe(true);
+    expect(shouldStealControlClick(false, false, "fullscreen")).toBe(false);
+  });
+
+  it("offsets overlay buttons when the fullscreen player is larger than the video", () => {
+    expect(overlayInsets({ right: 1920, bottom: 1080 }, { right: 1920, bottom: 1080 })).toEqual({
+      right: 0,
+      bottom: 0
+    });
+    expect(overlayInsets({ right: 1920, bottom: 1080 }, { right: 1600, bottom: 900 })).toEqual({
+      right: 320,
+      bottom: 180
+    });
   });
 
   it("uses the public overflow-button pseudo size when Chromium exposes it", () => {
@@ -182,6 +196,19 @@ describe("player fullscreen", () => {
     (doc as { fullscreenElement: Element | null }).fullscreenElement = other;
     expect(isPlayerFullscreen(doc, player)).toBe(false);
     expect(fullscreenMenuParent(doc, player)).toBeUndefined();
+  });
+});
+
+describe("mountMenuInParent", () => {
+  it("moves a body menu into the fullscreen player", () => {
+    const player = document.createElement("div");
+    const menu = document.createElement("div");
+    menu.className = "menu";
+    document.body.append(player, menu);
+    mountMenuInParent(player);
+    expect(menu.parentElement).toBe(player);
+    player.remove();
+    menu.remove();
   });
 });
 

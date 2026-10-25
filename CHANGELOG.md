@@ -1,3 +1,7 @@
+## Unreleased
+
+- Fullscreen more-options and full-screen hit boxes respond again; the overflow menu stays on the fullscreen player.
+
 ## 0.2.0 — 2026-10-24
 
 - Create, import, and embed subtitle tracks from the player more-options menu.

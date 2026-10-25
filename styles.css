@@ -209,6 +209,12 @@
   height: var(--video-subtitles-fs-height, 48px);
 }
 
+/* Fullscreen video controls paint above sibling overlays; keep the hit boxes on top. */
+.video-subtitles-player:fullscreen .video-subtitles-overflow-hit,
+.video-subtitles-player:-webkit-full-screen .video-subtitles-overflow-hit {
+  z-index: 2147483647;
+}
+
 .video-subtitles-cues {
   position: absolute;
   right: 8%;
