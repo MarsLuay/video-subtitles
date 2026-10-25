@@ -1,4 +1,4 @@
-import { readContainedFile, writeContainedFile } from "./containedFs";
+import { containedPath, readContainedFile, writeContainedFile } from "./containedFs";
 import { loadFs, loadPath } from "./node";
 
 export function fileCache(root: string): {
@@ -21,8 +21,12 @@ export function fileCache(root: string): {
   };
   return {
     async match(request) {
-      const file = toPath(request);
-      if (!file.startsWith(root)) return undefined;
+      let file: string;
+      try {
+        file = containedPath(root, toPath(request));
+      } catch {
+        return undefined;
+      }
       if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) return undefined;
       const bytes = readContainedFile(root, file);
       const copy = new Uint8Array(bytes.byteLength);
@@ -32,8 +36,7 @@ export function fileCache(root: string): {
       });
     },
     async put(request, response) {
-      const file = toPath(request);
-      if (!file.startsWith(root)) throw new Error("path escapes root");
+      const file = containedPath(root, toPath(request));
       fs.mkdirSync(path.dirname(file), { recursive: true });
       writeContainedFile(root, file, new Uint8Array(await response.arrayBuffer()));
     }

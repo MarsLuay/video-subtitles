@@ -1,5 +1,5 @@
 import { downloadFile, existsFile } from "./download";
-import { readContainedFile, writeContainedFile } from "./containedFs";
+import { containedPath, readContainedFile, writeContainedFile } from "./containedFs";
 import { loadFs, loadPath } from "./node";
 import { fileCache } from "./cache";
 import { whisperInputOptions, type CreateTranscribeSettings } from "../settings";
@@ -99,11 +99,16 @@ export function forceWebOnnxSource(source: string): string {
 }
 
 function patchWebOnnxFile(root: string, absPath: string): void {
-  if (!existsFile(absPath)) return;
-  if (!absPath.startsWith(root)) return;
-  const src = new TextDecoder().decode(readContainedFile(root, absPath));
+  let file: string;
+  try {
+    file = containedPath(root, absPath);
+  } catch {
+    return;
+  }
+  if (!existsFile(file)) return;
+  const src = new TextDecoder().decode(readContainedFile(root, file));
   const next = forceWebOnnxSource(src);
-  if (next !== src) writeContainedFile(root, absPath, next);
+  if (next !== src) writeContainedFile(root, file, next);
 }
 
 function clearOnnxRuntimeGlobal(): void {

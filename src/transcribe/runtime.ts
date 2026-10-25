@@ -1,5 +1,5 @@
 import { FileSystemAdapter, type Plugin, type TFile } from "obsidian";
-import { readContainedFile } from "./containedFs";
+import { containedPath, readContainedFile } from "./containedFs";
 import { existsFile, removePath } from "./download";
 import { extractWav, ensureFfmpeg } from "./ffmpeg";
 import { decodeVideoAudio, pcmWindows, readWavPcm, shiftCues, slicePcm, WHISPER_SAMPLE_RATE } from "./audio";
@@ -94,7 +94,8 @@ export function fileResourceUrl(plugin: Plugin, absPath: string): string {
   if (adapter instanceof FileSystemAdapter) {
     const base = adapter.getBasePath().replace(/\\/g, "/");
     const normalized = absPath.replace(/\\/g, "/");
-    if (normalized.startsWith(base)) {
+    const prefix = base.endsWith("/") ? base : `${base}/`;
+    if (normalized === base || normalized.startsWith(prefix)) {
       const rel = normalized.slice(base.length).replace(/^\//, "");
       return adapter.getResourcePath(rel).replace(/[?#].*$/, "");
     }
@@ -125,16 +126,14 @@ export async function transcribeVideoFile(
   let pcm: Float32Array | null = null;
   const size = fs.statSync(videoPath).size;
   if (size > 0 && size <= DECODE_AUDIO_MAX_BYTES) {
-    if (!videoPath.startsWith(vaultRoot)) throw new Error("path escapes root");
     const bytes = readContainedFile(vaultRoot, videoPath);
     pcm = await decodeVideoAudio(toArrayBuffer(bytes), win);
   }
   if (!pcm) {
     onProgress?.(10, null, "load");
     const ffmpeg = await ensureFfmpeg(dirs.bin);
-    const wavPath = path.join(dirs.tmp, "audio.wav");
+    const wavPath = containedPath(root, path.join(dirs.tmp, "audio.wav"));
     await extractWav(ffmpeg, videoPath, wavPath);
-    if (!wavPath.startsWith(root)) throw new Error("path escapes root");
     pcm = readWavPcm(readContainedFile(root, wavPath));
     if (existsFile(wavPath)) fs.unlinkSync(wavPath);
   }
