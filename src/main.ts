@@ -10,6 +10,7 @@ import { pickAccuracyForHardware } from "./transcribe/hardware";
 import { readHardware } from "./transcribe/node";
 import type { TranscribeRange } from "./transcribe/range";
 import { removeInstalledTranscriber, shouldRemoveTranscriberOnUnload } from "./transcribe/runtime";
+import { BatchProgressDock } from "./ui/batchProgressDock";
 
 export default class VideoSubtitlesPlugin extends Plugin implements VideoSubtitlesHost {
   subtitleSettings: VideoSubtitleSettings = { ...DEFAULT_SETTINGS };
@@ -21,6 +22,7 @@ export default class VideoSubtitlesPlugin extends Plugin implements VideoSubtitl
     this.subtitleSettings = mergeSettings(await this.loadData());
     await this.applyFirstRunAccuracy();
     this.createQueue = new CreateQueue(this);
+    this.addChild(new BatchProgressDock(this));
     this.surfaces = new VideoSurfaceManager(this);
     this.addSettingTab(new VideoSubtitlesSettingTab(this.app, this));
     this.registerEvent(

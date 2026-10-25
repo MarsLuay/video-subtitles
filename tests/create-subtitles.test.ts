@@ -60,6 +60,7 @@ import { spliceGeneratedTrack, upsertGeneratedTrack } from "../src/subtitles/gen
 import { emptyStore } from "../src/subtitles/store";
 import { VideoSubtitlesSettingTab, type SettingsHost } from "../src/settingsTab";
 import { paintBatchProgress } from "../src/ui/batchProgress";
+import { BatchProgressDock } from "../src/ui/batchProgressDock";
 import {
   ACCURACY_LABELS,
   DEFAULT_SETTINGS,
@@ -213,6 +214,39 @@ describe("subtitle settings", () => {
     expect(tab.containerEl.textContent).toContain("talk.mp4");
     await lastSettingButtonClick?.();
     expect(start).toHaveBeenCalledWith([file], true);
+  });
+
+  it("keeps process-all meters on the workspace after settings close", () => {
+    const snapshot = {
+      ...idleQueueSnapshot(),
+      running: true,
+      total: 2,
+      completed: 0,
+      currentName: "talk.mp4",
+      currentPercent: 12,
+      overallPercent: 6
+    };
+    const workspace = { containerEl: document.createElement("div") };
+    let notify = (): void => undefined;
+    const host = {
+      app: { workspace },
+      createQueue: {
+        snapshot: () => snapshot,
+        subscribe: (listener: () => void) => {
+          notify = listener;
+          return () => undefined;
+        }
+      }
+    } as unknown as SettingsHost;
+    const dock = new BatchProgressDock(host);
+    dock.onload();
+    notify();
+    expect(workspace.containerEl.textContent).toContain("All videos");
+    expect(workspace.containerEl.textContent).toContain("talk.mp4");
+    expect(workspace.containerEl.querySelector(".video-subtitles-batch-dock-hidden")).toBeNull();
+    snapshot.running = false;
+    notify();
+    expect(workspace.containerEl.querySelector(".video-subtitles-batch-dock-hidden")).not.toBeNull();
   });
 });
 

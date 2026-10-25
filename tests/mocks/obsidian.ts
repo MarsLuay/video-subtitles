@@ -24,10 +24,19 @@ export class Plugin {
 }
 
 export class Component {
-  register(): void {}
+  onload(): void {}
+  onunload(): void {}
+  register(cb?: () => void): void {
+    if (cb) this.cleanups.push(cb);
+  }
   registerEvent(): void {}
   registerDomEvent(): void {}
-  unload(): void {}
+  unload(): void {
+    for (const cleanup of this.cleanups) cleanup();
+    this.cleanups.length = 0;
+    this.onunload();
+  }
+  private cleanups: Array<() => void> = [];
 }
 
 export class Notice {

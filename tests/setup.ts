@@ -26,6 +26,13 @@ Object.defineProperty(HTMLElement.prototype, "addClass", {
   }
 });
 
+Object.defineProperty(HTMLElement.prototype, "toggleClass", {
+  configurable: true,
+  value(this: HTMLElement, cls: string, on: boolean) {
+    this.classList.toggle(cls, on);
+  }
+});
+
 Object.defineProperty(HTMLElement.prototype, "createDiv", {
   configurable: true,
   value(this: HTMLElement, opts?: string | { cls?: string; text?: string }) {
