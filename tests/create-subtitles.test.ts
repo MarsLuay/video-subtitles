@@ -14,10 +14,12 @@ import {
 } from "../src/transcribe/audio";
 import { ffmpegAsset, FFMPEG_RELEASE } from "../src/transcribe/ffmpeg";
 import { pickAccuracyForHardware } from "../src/transcribe/hardware";
+import { fileCache, modelCachePath } from "../src/transcribe/cache";
 import {
   forceWebOnnxSource,
   inferenceDevice,
   ONNXRUNTIME_WEB_VERSION,
+  ONNX_WASM_PROXY,
   TRANSFORMERS_VERSION,
   transcriberLibFiles
 } from "../src/transcribe/lib";
@@ -437,6 +439,67 @@ describe("contained filesystem paths", () => {
       else delete win.require;
     }
   });
+
+  it("only stores http model files inside the models root", async () => {
+    const nodePath = await import("node:path");
+    const files = new Map<string, Uint8Array>();
+    const win = window as unknown as { require?: (id: string) => unknown };
+    const previous = win.require;
+    win.require = (id: string) => {
+      if (id === "path") return nodePath;
+      if (id === "fs") {
+        return {
+          existsSync: (file: string) => files.has(file),
+          statSync: () => ({ isDirectory: () => false }),
+          mkdirSync: () => {},
+          readFileSync: (file: string) => files.get(file) ?? new Uint8Array(),
+          writeFileSync: (file: string, data: string | Uint8Array) => {
+            files.set(file, typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data));
+          }
+        };
+      }
+      throw new Error(id);
+    };
+    try {
+      const root = "/plugin/transcriber/models";
+      expect(
+        modelCachePath(root, "https://huggingface.co/Xenova/whisper-tiny/resolve/main/onnx/model.onnx")
+      ).toBe("/plugin/transcriber/models/huggingface.co/Xenova/whisper-tiny/resolve/main/onnx/model.onnx");
+      expect(
+        modelCachePath(
+          root,
+          "file:///Volumes/Samsung_T5/ObsidianNotes/.obsidian/plugins/video-subtitles/transcriber/lib/ort.wasm"
+        )
+      ).toBeNull();
+      expect(modelCachePath(root, "app://839f7b/Volumes/Samsung_T5/lib/ort.wasm")).toBeNull();
+      const cache = fileCache(root);
+      await cache.put(
+        "https://huggingface.co/Xenova/whisper-tiny/resolve/main/onnx/model.onnx",
+        new Response(new Uint8Array([1, 2, 3]))
+      );
+      await cache.put(
+        "file:///Volumes/Samsung_T5/ObsidianNotes/.obsidian/plugins/video-subtitles/transcriber/lib/ort.wasm",
+        new Response(new Uint8Array([9]))
+      );
+      const stored = [...files.keys()];
+      expect(stored).toEqual([
+        "/plugin/transcriber/models/huggingface.co/Xenova/whisper-tiny/resolve/main/onnx/model.onnx"
+      ]);
+      const hit = await cache.match(
+        "https://huggingface.co/Xenova/whisper-tiny/resolve/main/onnx/model.onnx"
+      );
+      expect(hit).toBeDefined();
+      expect(Array.from(new Uint8Array(await hit!.arrayBuffer()))).toEqual([1, 2, 3]);
+      expect(
+        await cache.match(
+          "file:///Volumes/Samsung_T5/ObsidianNotes/.obsidian/plugins/video-subtitles/transcriber/lib/ort.wasm"
+        )
+      ).toBeUndefined();
+    } finally {
+      if (previous) win.require = previous;
+      else delete win.require;
+    }
+  });
 });
 
 describe("transcriber runtime files", () => {
@@ -451,6 +514,7 @@ describe("transcriber runtime files", () => {
     expect(ffmpegAsset("win32", "x64")?.binary).toBe("ffmpeg.exe");
     expect(ffmpegAsset("sunos", "x64")).toBeNull();
     expect(inferenceDevice()).toBe("wasm");
+    expect(ONNX_WASM_PROXY).toBe(false);
     expect(forceWebOnnxSource('vA=bA&&process?.release?.name==="node"&&!Ic')).toBe("vA=bA&&false&&!Ic");
     expect(
       forceWebOnnxSource('m=globalThis.process?.versions?.node&&"renderer"!=globalThis.process?.type')

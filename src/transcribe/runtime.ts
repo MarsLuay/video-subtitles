@@ -5,7 +5,7 @@ import { extractWav, ensureFfmpeg } from "./ffmpeg";
 import { decodeVideoAudio, pcmWindows, readWavPcm, shiftCues, slicePcm, WHISPER_SAMPLE_RATE } from "./audio";
 import { normalizeTranscribeRange, type TranscribeRange } from "./range";
 import { loadFs, loadPath, loadUrl } from "./node";
-import { transcribePcm } from "./lib";
+import { releaseTranscriber, transcribePcm } from "./lib";
 import { yieldToTracker, type CreateProgressFn } from "./progress";
 import {
   CREATE_RESUME_FILE,
@@ -18,6 +18,8 @@ import {
 import { toArrayBuffer } from "../subtitles/absorb/bytes";
 import type { CreateTranscribeSettings } from "../settings";
 import type { SubtitleCue } from "../subtitles/cues";
+
+export { releaseTranscriber };
 
 const DECODE_AUDIO_MAX_BYTES = 80 * 1024 * 1024;
 
@@ -63,6 +65,7 @@ export function clearCreateResume(plugin: Plugin): void {
 
 export function cleanupTranscriber(root: string, keep: boolean): void {
   if (!keep) {
+    void releaseTranscriber();
     removePath(root);
     return;
   }

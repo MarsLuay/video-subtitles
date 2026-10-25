@@ -13,6 +13,7 @@ import type { TranscribeRange } from "./range";
 import {
   cleanupTranscriber,
   clearCreateResume,
+  releaseTranscriber,
   transcribeVideoFile,
   transcriberRoot,
   vaultFileAbsPath
@@ -304,6 +305,7 @@ export class CreateQueue {
       this.completedElapsedMs = 0;
       if (root) {
         try {
+          if (!keep) await releaseTranscriber();
           cleanupTranscriber(root, keep);
         } catch (error) {
           console.error(error);

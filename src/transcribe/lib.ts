@@ -13,6 +13,7 @@ import {
   mergeFileProgress,
   processedDurationSec,
   remainingTranscribeSeconds,
+  startEstimate,
   videoProgressPercent,
   yieldToTracker,
   type CreateProgressFn,
@@ -82,7 +83,20 @@ export function inferenceDevice(): "wasm" {
   return "wasm";
 }
 
+export const ONNX_WASM_PROXY = false;
 export const WEB_ONNX_IMPORT = "vs-web-onnx";
+
+type AsrPipeline = Awaited<ReturnType<TransformersModule["pipeline"]>>;
+
+type LoadedTranscriber = {
+  key: string;
+  transformers: TransformersModule;
+  asr: AsrPipeline;
+  blobs: string[];
+};
+
+let loaded: LoadedTranscriber | null = null;
+let importNonce = 0;
 
 export function forceWebOnnxSource(source: string): string {
   const globalName = ["global", "This"].join("");
@@ -155,8 +169,9 @@ function importEsm(specifier: string): Promise<TransformersModule> {
 
 function importTransformers(jsUrl: string): Promise<TransformersModule> {
   clearOnnxRuntimeGlobal();
-  const hashed = jsUrl.includes("#") ? jsUrl : `${jsUrl}#${WEB_ONNX_IMPORT}`;
-  return withBrowserProcessRelease(() => importEsm(hashed));
+  importNonce += 1;
+  const base = jsUrl.split("#")[0] ?? jsUrl;
+  return withBrowserProcessRelease(() => importEsm(`${base}#${WEB_ONNX_IMPORT}-${importNonce}`));
 }
 
 function applyWasmPaths(
@@ -172,6 +187,122 @@ function applyWasmPaths(
     target.wasm.proxy = proxy;
     target.wasm.numThreads = 1;
     target.wasm.wasmPaths = paths;
+  }
+}
+
+function revokeBlobs(urls: readonly string[]): void {
+  for (const url of urls) {
+    try {
+      URL.revokeObjectURL(url);
+    } catch {
+      /* already revoked */
+    }
+  }
+}
+
+function blobUrlForBytes(bytes: Uint8Array, mime: string): string {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return URL.createObjectURL(new Blob([copy], { type: mime }));
+}
+
+function libWasmBlobs(libDir: string): { mjs: string; wasm: string; blobs: string[] } {
+  const path = loadPath();
+  const mjs = blobUrlForBytes(
+    readContainedFile(libDir, path.join(libDir, "ort-wasm-simd-threaded.asyncify.mjs")),
+    "text/javascript"
+  );
+  const wasm = blobUrlForBytes(
+    readContainedFile(libDir, path.join(libDir, "ort-wasm-simd-threaded.asyncify.wasm")),
+    "application/wasm"
+  );
+  return { mjs, wasm, blobs: [mjs, wasm] };
+}
+
+function asrKey(settings: CreateTranscribeSettings): string {
+  return `${whisperModelId(settings.transcriberAccuracy)}|q8|wasm`;
+}
+
+function windowTimers(): {
+  setInterval: (handler: () => void, ms: number) => number;
+  clearInterval: (id: number) => void;
+} {
+  return {
+    setInterval: (handler, ms) => window.setInterval(handler, ms),
+    clearInterval: (id) => window.clearInterval(id)
+  };
+}
+
+export async function releaseTranscriber(): Promise<void> {
+  const current = loaded;
+  loaded = null;
+  if (!current) return;
+  revokeBlobs(current.blobs);
+  if (typeof current.asr.dispose === "function") {
+    try {
+      await current.asr.dispose();
+    } catch {
+      /* already gone */
+    }
+  }
+  clearOnnxRuntimeGlobal();
+}
+
+async function ensureAsr(
+  settings: CreateTranscribeSettings,
+  libDir: string,
+  modelsDir: string,
+  toUrl: (absPath: string) => string,
+  reportLoad: (percent: number) => void
+): Promise<AsrPipeline> {
+  const key = asrKey(settings);
+  if (loaded?.key === key) {
+    reportLoad(100);
+    return loaded.asr;
+  }
+  await releaseTranscriber();
+  await ensureTranscriberLib(libDir);
+  reportLoad(35);
+  const path = loadPath();
+  const jsUrl = toUrl(path.join(libDir, "transformers.min.js"));
+  const wasmPaths = libWasmBlobs(libDir);
+  try {
+    const transformers = await importTransformers(jsUrl);
+    transformers.env.allowRemoteModels = true;
+    transformers.env.allowLocalModels = false;
+    transformers.env.useBrowserCache = false;
+    transformers.env.useFSCache = false;
+    transformers.env.useCustomCache = true;
+    transformers.env.customCache = fileCache(modelsDir);
+    applyWasmPaths(transformers, { mjs: wasmPaths.mjs, wasm: wasmPaths.wasm }, ONNX_WASM_PROXY);
+    reportLoad(40);
+    const downloads = new Map<string, { loaded: number; total: number }>();
+    const stopTick = startEstimate(40, 99, 45, (percent) => reportLoad(percent), windowTimers());
+    try {
+      const asr = await transformers.pipeline(
+        "automatic-speech-recognition",
+        whisperModelId(settings.transcriberAccuracy),
+        {
+          dtype: "q8",
+          device: inferenceDevice(),
+          progress_callback: (event: ProgressEvent) => {
+            try {
+              reportLoad(loadStagePercent(mergeFileProgress(downloads, event)));
+            } catch {
+              /* keep loading the model */
+            }
+          }
+        }
+      );
+      loaded = { key, transformers, asr, blobs: wasmPaths.blobs };
+      reportLoad(100);
+      return asr;
+    } finally {
+      stopTick();
+    }
+  } catch (error) {
+    revokeBlobs(wasmPaths.blobs);
+    throw error;
   }
 }
 
@@ -216,106 +347,67 @@ export async function transcribePcm(
   };
   if (startWindow >= windows.length) return finish();
   reportLoad(20);
-  const path = loadPath();
-  await ensureTranscriberLib(libDir);
-  reportLoad(35);
-  const jsUrl = toUrl(path.join(libDir, "transformers.min.js"));
-  const wasmPaths = {
-    mjs: toUrl(path.join(libDir, "ort-wasm-simd-threaded.asyncify.mjs")),
-    wasm: toUrl(path.join(libDir, "ort-wasm-simd-threaded.asyncify.wasm"))
-  };
-  const transformers = await importTransformers(jsUrl);
-  transformers.env.allowRemoteModels = true;
-  transformers.env.allowLocalModels = false;
-  transformers.env.useBrowserCache = false;
-  transformers.env.useFSCache = false;
-  transformers.env.useCustomCache = true;
-  transformers.env.customCache = fileCache(modelsDir);
-  applyWasmPaths(transformers, wasmPaths, true);
-  reportLoad(40);
-  const downloads = new Map<string, { loaded: number; total: number }>();
   const generate = whisperInputOptions(settings);
-  const openAsr = (): ReturnType<TransformersModule["pipeline"]> =>
-    transformers.pipeline("automatic-speech-recognition", whisperModelId(settings.transcriberAccuracy), {
-      dtype: "q8",
-      device: inferenceDevice(),
-      progress_callback: (event: ProgressEvent) => {
-        try {
-          reportLoad(loadStagePercent(mergeFileProgress(downloads, event)));
-        } catch {
-          /* keep loading the model */
-        }
-      }
-    });
-  let asr = await openAsr().catch(async () => {
-    applyWasmPaths(transformers, wasmPaths, false);
-    return openAsr();
-  });
-  reportLoad(100);
+  let asr = await ensureAsr(settings, libDir, modelsDir, toUrl, reportLoad);
   report(startWindow);
   await yieldToTracker();
   const transcribeStarted = Date.now();
   let firstWindowMs = 0;
   let remainingSec: number | null = null;
   const sessionTotal = windows.length - startWindow;
-  try {
-    for (let index = startWindow; index < windows.length; index += 1) {
-      const part = windows[index];
-      if (!part) continue;
-      report(index, remainingSec);
-      await yieldToTracker();
-      let result: { text?: string; chunks?: { text?: string; timestamp?: [number | null, number | null] }[] };
-      try {
-        result = await asr(new Float32Array(part.samples), generate);
-      } catch (error) {
-        if (index !== startWindow) throw error;
-        applyWasmPaths(transformers, wasmPaths, false);
-        if (typeof asr.dispose === "function") await asr.dispose();
-        asr = await openAsr();
-        result = await asr(new Float32Array(part.samples), generate);
-      }
-      if (firstWindowMs === 0) firstWindowMs = Date.now() - transcribeStarted;
-      remainingSec = remainingTranscribeSeconds({
-        completedWindows: index - startWindow + 1,
-        totalWindows: sessionTotal,
-        elapsedMs: Date.now() - transcribeStarted,
-        firstWindowMs
-      });
-      report(index + 1, remainingSec);
-      const shifted = chunksToCues(result.chunks ?? []).map((cue) => ({
-        start: cue.start + part.offsetSec,
-        end: cue.end + part.offsetSec,
-        text: cue.text
-      }));
-      if (shifted.length > 0) {
-        appendWindowCues(cues, shifted);
-      } else {
-        const text = (result.text ?? "").replace(/\s+/g, " ").trim();
-        if (text) {
-          fallback = fallback ? `${fallback} ${text}` : text;
-          appendWindowCues(cues, [
-            {
-              start: part.offsetSec,
-              end: Math.max(part.offsetSec + 0.5, part.offsetSec + part.samples.length / 16_000),
-              text
-            }
-          ]);
-        }
-      }
-      try {
-        await resume.onCheckpoint?.({
-          nextWindow: index + 1,
-          cues: cues.map((cue) => ({ ...cue })),
-          fallback
-        });
-      } catch {
-        /* keep transcribing */
+  for (let index = startWindow; index < windows.length; index += 1) {
+    const part = windows[index];
+    if (!part) continue;
+    report(index, remainingSec);
+    await yieldToTracker();
+    let result: { text?: string; chunks?: { text?: string; timestamp?: [number | null, number | null] }[] };
+    try {
+      result = await asr(new Float32Array(part.samples), generate);
+    } catch (error) {
+      if (index !== startWindow) throw error;
+      await releaseTranscriber();
+      asr = await ensureAsr(settings, libDir, modelsDir, toUrl, reportLoad);
+      result = await asr(new Float32Array(part.samples), generate);
+    }
+    if (firstWindowMs === 0) firstWindowMs = Date.now() - transcribeStarted;
+    remainingSec = remainingTranscribeSeconds({
+      completedWindows: index - startWindow + 1,
+      totalWindows: sessionTotal,
+      elapsedMs: Date.now() - transcribeStarted,
+      firstWindowMs
+    });
+    report(index + 1, remainingSec);
+    const shifted = chunksToCues(result.chunks ?? []).map((cue) => ({
+      start: cue.start + part.offsetSec,
+      end: cue.end + part.offsetSec,
+      text: cue.text
+    }));
+    if (shifted.length > 0) {
+      appendWindowCues(cues, shifted);
+    } else {
+      const text = (result.text ?? "").replace(/\s+/g, " ").trim();
+      if (text) {
+        fallback = fallback ? `${fallback} ${text}` : text;
+        appendWindowCues(cues, [
+          {
+            start: part.offsetSec,
+            end: Math.max(part.offsetSec + 0.5, part.offsetSec + part.samples.length / 16_000),
+            text
+          }
+        ]);
       }
     }
-    return finish();
-  } finally {
-    if (typeof asr.dispose === "function") await asr.dispose();
+    try {
+      await resume.onCheckpoint?.({
+        nextWindow: index + 1,
+        cues: cues.map((cue) => ({ ...cue })),
+        fallback
+      });
+    } catch {
+      /* keep transcribing */
+    }
   }
+  return finish();
 }
 
 function clampStartWindow(value: number | undefined, total: number): number {

@@ -9,7 +9,11 @@ import { CreateQueue } from "./transcribe/batch";
 import { pickAccuracyForHardware } from "./transcribe/hardware";
 import { readHardware } from "./transcribe/node";
 import type { TranscribeRange } from "./transcribe/range";
-import { removeInstalledTranscriber, shouldRemoveTranscriberOnUnload } from "./transcribe/runtime";
+import {
+  releaseTranscriber,
+  removeInstalledTranscriber,
+  shouldRemoveTranscriberOnUnload
+} from "./transcribe/runtime";
 import { BatchProgressDock } from "./ui/batchProgressDock";
 
 export default class VideoSubtitlesPlugin extends Plugin implements VideoSubtitlesHost {
@@ -49,6 +53,7 @@ export default class VideoSubtitlesPlugin extends Plugin implements VideoSubtitl
   onunload(): void {
     this.createQueue?.abort();
     this.surfaces = null;
+    void releaseTranscriber();
     if (!shouldRemoveTranscriberOnUnload(this.appQuitting)) return;
     removeInstalledTranscriber(this);
   }
