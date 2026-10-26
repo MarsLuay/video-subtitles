@@ -169,8 +169,8 @@
 
 .video-subtitles-overflow-hit {
   position: absolute;
-  right: var(--video-subtitles-hit-right, 0px);
-  bottom: var(--video-subtitles-hit-bottom, 24px);
+  left: var(--video-subtitles-hit-left, calc(100% - 48px));
+  top: var(--video-subtitles-hit-top, calc(100% - 72px));
   z-index: 7;
   width: var(--video-subtitles-hit-width, 48px);
   height: var(--video-subtitles-hit-height, 48px);
@@ -203,16 +203,29 @@
 }
 
 .video-subtitles-fullscreen-hit {
-  right: var(--video-subtitles-fs-right, 48px);
-  bottom: var(--video-subtitles-fs-bottom, 24px);
+  left: var(--video-subtitles-fs-left, calc(100% - 96px));
+  top: var(--video-subtitles-fs-top, calc(100% - 72px));
   width: var(--video-subtitles-fs-width, 48px);
   height: var(--video-subtitles-fs-height, 48px);
 }
 
-/* Fullscreen video controls paint above sibling overlays; keep the hit boxes on top. */
+/* Fullscreen video controls paint above sibling overlays; keep the hit boxes on top.
+   Chromium fullscreen controls are 64×64 with 16px right inset (windowed is 48×48 / 0). */
 .video-subtitles-player:fullscreen .video-subtitles-overflow-hit,
 .video-subtitles-player:-webkit-full-screen .video-subtitles-overflow-hit {
   z-index: 2147483647;
+  left: var(--video-subtitles-hit-left, calc(100% - 80px));
+  top: var(--video-subtitles-hit-top, calc(100% - 88px));
+  width: var(--video-subtitles-hit-width, 64px);
+  height: var(--video-subtitles-hit-height, 64px);
+}
+
+.video-subtitles-player:fullscreen .video-subtitles-fullscreen-hit,
+.video-subtitles-player:-webkit-full-screen .video-subtitles-fullscreen-hit {
+  left: var(--video-subtitles-fs-left, calc(100% - 144px));
+  top: var(--video-subtitles-fs-top, calc(100% - 88px));
+  width: var(--video-subtitles-fs-width, 64px);
+  height: var(--video-subtitles-fs-height, 64px);
 }
 
 .video-subtitles-cues {

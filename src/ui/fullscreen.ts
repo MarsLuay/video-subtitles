@@ -23,6 +23,13 @@ export async function requestFullscreen(el: HTMLElement): Promise<void> {
   await prefixed.webkitRequestFullscreen?.();
 }
 
+/** Native FS control still "enters" while the wrapper is fullscreen; treat that as exit. */
+export function videoFullscreenRedirect(
+  playerIsFullscreen: boolean
+): "exit" | "enter" {
+  return playerIsFullscreen ? "exit" : "enter";
+}
+
 export async function exitFullscreen(doc: Document): Promise<void> {
   if (!currentFullscreenElement(doc)) return;
   if (typeof doc.exitFullscreen === "function") {

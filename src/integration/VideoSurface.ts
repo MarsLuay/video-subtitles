@@ -14,7 +14,7 @@ import {
   hitControlKind,
   measureFullscreenHit,
   measureOverflowHit,
-  overlayInsets,
+  overlayOffset,
   shouldStealControlClick
 } from "../ui/overflowButton";
 import {
@@ -22,7 +22,8 @@ import {
   exitFullscreen,
   fullscreenMenuParent,
   isPlayerFullscreen,
-  requestFullscreen
+  requestFullscreen,
+  videoFullscreenRedirect
 } from "../ui/fullscreen";
 import { pickSubtitleFile } from "../ui/pickSubtitleFile";
 import { parseSubtitle } from "../subtitles/parseSubtitle";
@@ -57,7 +58,9 @@ class VideoSession extends Component {
   private readonly cuesEl: HTMLElement;
   private redirectingFullscreen = false;
   private hovering = false;
+  private fullscreenWork: Promise<void> | null = null;
   private nativeRequestFullscreen: HTMLVideoElement["requestFullscreen"] | null = null;
+  private nativeWebkitRequestFullscreen: (() => void) | null = null;
   private readonly onTime = (): void => this.paintCues();
   private persistQueue: Promise<void> = Promise.resolve();
   private menu: Menu | null = null;
@@ -97,6 +100,13 @@ class VideoSession extends Component {
     this.syncHitSize();
     this.resizeObserver = new ResizeObserver(() => this.syncHitSize());
     this.resizeObserver.observe(this.video);
+    this.resizeObserver.observe(this.player);
+    const win = this.player.win;
+    win.requestAnimationFrame(() => {
+      this.syncHitSize();
+      win.requestAnimationFrame(() => this.syncHitSize());
+    });
+    win.setTimeout(() => this.syncHitSize(), 0);
     this.registerDomEvent(this.video, "timeupdate", this.onTime);
     this.registerDomEvent(this.video, "seeked", this.onTime);
     this.registerDomEvent(this.video, "loadedmetadata", this.onLoaded);
@@ -157,18 +167,22 @@ class VideoSession extends Component {
   };
 
   private syncHitSize(): void {
+    const playerRect = this.player.getBoundingClientRect();
+    const videoRect = this.video.getBoundingClientRect();
+    if (videoRect.width <= 0 || videoRect.height <= 0) return;
     const box = measureOverflowHit(this.video);
     const fullscreen = measureFullscreenHit(this.video);
-    const inset = overlayInsets(this.player.getBoundingClientRect(), this.video.getBoundingClientRect());
+    const overflowPos = overlayOffset(playerRect, videoRect, box);
+    const fullscreenPos = overlayOffset(playerRect, videoRect, fullscreen);
     this.player.setCssProps({
       "--video-subtitles-hit-width": `${box.width}px`,
       "--video-subtitles-hit-height": `${box.height}px`,
-      "--video-subtitles-hit-right": `${box.right + inset.right}px`,
-      "--video-subtitles-hit-bottom": `${box.bottom + inset.bottom}px`,
+      "--video-subtitles-hit-left": `${overflowPos.left}px`,
+      "--video-subtitles-hit-top": `${overflowPos.top}px`,
       "--video-subtitles-fs-width": `${fullscreen.width}px`,
       "--video-subtitles-fs-height": `${fullscreen.height}px`,
-      "--video-subtitles-fs-right": `${fullscreen.right + inset.right}px`,
-      "--video-subtitles-fs-bottom": `${fullscreen.bottom + inset.bottom}px`
+      "--video-subtitles-fs-left": `${fullscreenPos.left}px`,
+      "--video-subtitles-fs-top": `${fullscreenPos.top}px`
     });
   }
 
@@ -206,7 +220,8 @@ class VideoSession extends Component {
   private shouldStealFrom(event: Event): boolean {
     if (this.isHitTarget(event)) return false;
     const target = event.target;
-    return !(target instanceof Element && target.closest(".menu"));
+    if (!target || typeof (target as Element).closest !== "function") return true;
+    return !(target as Element).closest(".menu");
   }
 
   private controlKind(event: MouseEvent): "overflow" | "fullscreen" | null {
@@ -221,8 +236,9 @@ class VideoSession extends Component {
   }
 
   private stealControlEvent(event: Event, cancelDefault: boolean): "overflow" | "fullscreen" | null {
-    if (!(event instanceof MouseEvent)) return null;
-    const kind = this.controlKind(event);
+    const mouse = event as MouseEvent;
+    if (typeof mouse.clientX !== "number" || typeof mouse.clientY !== "number") return null;
+    const kind = this.controlKind(mouse);
     if (!shouldStealControlClick(this.video.paused, this.hovering, kind)) return null;
     if (cancelDefault) event.preventDefault();
     event.stopPropagation();
@@ -277,15 +293,33 @@ class VideoSession extends Component {
   };
 
   private bindVideoFullscreen(): void {
-    if (typeof this.video.requestFullscreen !== "function") return;
-    this.nativeRequestFullscreen = this.video.requestFullscreen.bind(this.video);
-    this.video.requestFullscreen = () => requestFullscreen(this.player);
+    const video = this.video as HTMLVideoElement & {
+      webkitRequestFullscreen?: () => void;
+    };
+    const redirect = (): Promise<void> => this.togglePlayerFullscreen();
+    if (typeof video.requestFullscreen === "function") {
+      this.nativeRequestFullscreen = video.requestFullscreen.bind(video);
+      video.requestFullscreen = () => redirect();
+    }
+    if (typeof video.webkitRequestFullscreen === "function") {
+      this.nativeWebkitRequestFullscreen = video.webkitRequestFullscreen.bind(video);
+      video.webkitRequestFullscreen = () => {
+        void redirect();
+      };
+    }
   }
 
   private unbindVideoFullscreen(): void {
     if (this.nativeRequestFullscreen) {
       this.video.requestFullscreen = this.nativeRequestFullscreen;
       this.nativeRequestFullscreen = null;
+    }
+    const video = this.video as HTMLVideoElement & {
+      webkitRequestFullscreen?: () => void;
+    };
+    if (this.nativeWebkitRequestFullscreen) {
+      video.webkitRequestFullscreen = this.nativeWebkitRequestFullscreen;
+      this.nativeWebkitRequestFullscreen = null;
     }
   }
 
@@ -305,11 +339,22 @@ class VideoSession extends Component {
     void this.togglePlayerFullscreen();
   };
 
-  private async togglePlayerFullscreen(): Promise<void> {
+  private togglePlayerFullscreen(): Promise<void> {
+    if (this.fullscreenWork) return this.fullscreenWork;
+    this.fullscreenWork = this.runTogglePlayerFullscreen().finally(() => {
+      this.fullscreenWork = null;
+    });
+    return this.fullscreenWork;
+  }
+
+  private async runTogglePlayerFullscreen(): Promise<void> {
     const doc = this.video.ownerDocument;
     try {
-      if (isPlayerFullscreen(doc, this.player)) await exitFullscreen(doc);
-      else await requestFullscreen(this.player);
+      if (videoFullscreenRedirect(isPlayerFullscreen(doc, this.player)) === "exit") {
+        await exitFullscreen(doc);
+      } else {
+        await requestFullscreen(this.player);
+      }
     } catch (error) {
       console.error(formatError(error));
     }

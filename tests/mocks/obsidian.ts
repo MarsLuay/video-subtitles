@@ -168,6 +168,7 @@ export class Setting {
 
 export class Menu {
   hidden = false;
+  parentEl: HTMLElement | null = null;
   addItem(cb: (item: MenuItem) => void): this {
     cb(new MenuItem());
     return this;
@@ -178,7 +179,8 @@ export class Menu {
   setUseNativeMenu(_useNative: boolean): this {
     return this;
   }
-  setParentElement(_el: HTMLElement): this {
+  setParentElement(el: HTMLElement): this {
+    this.parentEl = el;
     return this;
   }
   showAtMouseEvent(_event: MouseEvent): void {}

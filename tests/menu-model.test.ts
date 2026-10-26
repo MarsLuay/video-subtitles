@@ -1,20 +1,31 @@
 import { describe, expect, it } from "vitest";
 import { Menu } from "obsidian";
 import { buildSubtitleMenuRows, playbackSpeedLabel } from "../src/ui/menuModel";
-import { mountMenuInParent, toggleOverflowMenu } from "../src/ui/overflowMenu";
+import { mountMenuInParent, openOverflowMenu, toggleOverflowMenu } from "../src/ui/overflowMenu";
 import {
   DEBUG_SHOW_OVERFLOW_HIT,
   FALLBACK_OVERFLOW_BUTTON,
+  FULLSCREEN_OVERFLOW_BUTTON,
+  FULLSCREEN_OVERFLOW_RIGHT_INSET,
   OVERFLOW_BUTTON_BOTTOM_INSET,
+  OVERFLOW_BUTTON_RIGHT_INSET,
+  defaultFullscreenHit,
+  defaultOverflowHit,
   hitControlKind,
   isOverflowButtonHit,
   measureFullscreenHit,
   measureOverflowHit,
   overlayInsets,
+  overlayOffset,
   overflowControlsVisible,
   shouldStealControlClick
 } from "../src/ui/overflowButton";
-import { currentFullscreenElement, fullscreenMenuParent, isPlayerFullscreen } from "../src/ui/fullscreen";
+import {
+  currentFullscreenElement,
+  fullscreenMenuParent,
+  isPlayerFullscreen,
+  videoFullscreenRedirect
+} from "../src/ui/fullscreen";
 
 describe("player overflow 3-dot", () => {
   it("keeps the overflow hit box invisible", () => {
@@ -24,8 +35,9 @@ describe("player overflow 3-dot", () => {
   it("hits the native overflow button at the bottom-right of the control bar", () => {
     const bounds = { width: 640, height: 360, left: 10, top: 20 };
     // 48×48, right 0, bottom 24 → video-local [592,288]–[640,336], client [602,308]–[650,356]
-    expect(isOverflowButtonHit(bounds, 630, 330)).toBe(true);
-    expect(isOverflowButtonHit(bounds, 649, 355)).toBe(true);
+    expect(isOverflowButtonHit(bounds, 620, 330)).toBe(true);
+    expect(isOverflowButtonHit(bounds, 640, 350)).toBe(true);
+    expect(isOverflowButtonHit(bounds, 651, 355)).toBe(false);
     expect(isOverflowButtonHit(bounds, 640, 370)).toBe(false);
     expect(isOverflowButtonHit(bounds, 500, 330)).toBe(false);
     expect(isOverflowButtonHit(bounds, 640, 200)).toBe(false);
@@ -39,17 +51,37 @@ describe("player overflow 3-dot", () => {
     const overflow = {
       width: FALLBACK_OVERFLOW_BUTTON,
       height: FALLBACK_OVERFLOW_BUTTON,
-      right: 0,
+      right: OVERFLOW_BUTTON_RIGHT_INSET,
       bottom: OVERFLOW_BUTTON_BOTTOM_INSET
     };
-    const fullscreen = { ...overflow, right: FALLBACK_OVERFLOW_BUTTON };
-    expect(hitControlKind(bounds, 630, 330, overflow, fullscreen)).toBe("overflow");
+    const fullscreen = {
+      ...overflow,
+      right: FALLBACK_OVERFLOW_BUTTON + OVERFLOW_BUTTON_RIGHT_INSET
+    };
+    expect(hitControlKind(bounds, 620, 330, overflow, fullscreen)).toBe("overflow");
     expect(hitControlKind(bounds, 580, 330, overflow, fullscreen)).toBe("fullscreen");
     expect(hitControlKind(bounds, 200, 200, overflow, fullscreen)).toBeNull();
     expect(shouldStealControlClick(false, true, "overflow")).toBe(true);
     expect(shouldStealControlClick(false, false, "overflow")).toBe(false);
     expect(shouldStealControlClick(false, true, "fullscreen")).toBe(true);
     expect(shouldStealControlClick(false, false, "fullscreen")).toBe(false);
+  });
+
+  it("does not treat the native fullscreen button as overflow", () => {
+    const bounds = { width: 640, height: 360, left: 415, top: 90 };
+    const overflow = {
+      width: FALLBACK_OVERFLOW_BUTTON,
+      height: FALLBACK_OVERFLOW_BUTTON,
+      right: OVERFLOW_BUTTON_RIGHT_INSET,
+      bottom: OVERFLOW_BUTTON_BOTTOM_INSET
+    };
+    const fullscreen = {
+      ...overflow,
+      right: FALLBACK_OVERFLOW_BUTTON + OVERFLOW_BUTTON_RIGHT_INSET
+    };
+    // CDP 640×360: fullscreen center 983, overflow center 1031
+    expect(hitControlKind(bounds, 983, 402, overflow, fullscreen)).toBe("fullscreen");
+    expect(hitControlKind(bounds, 1031, 402, overflow, fullscreen)).toBe("overflow");
   });
 
   it("offsets overlay buttons when the fullscreen player is larger than the video", () => {
@@ -60,6 +92,28 @@ describe("player overflow 3-dot", () => {
     expect(overlayInsets({ right: 1920, bottom: 1080 }, { right: 1600, bottom: 900 })).toEqual({
       right: 320,
       bottom: 180
+    });
+  });
+
+  it("places overlay buttons from the video box so a later player shrink keeps them on the controls", () => {
+    const box = {
+      width: FALLBACK_OVERFLOW_BUTTON,
+      height: FALLBACK_OVERFLOW_BUTTON,
+      right: OVERFLOW_BUTTON_RIGHT_INSET,
+      bottom: OVERFLOW_BUTTON_BOTTOM_INSET
+    };
+    const fullscreen = {
+      ...box,
+      right: FALLBACK_OVERFLOW_BUTTON + OVERFLOW_BUTTON_RIGHT_INSET
+    };
+    const video = { left: 415, top: 90, width: 640, height: 360 };
+    const widePlayer = { left: 415, top: 90 };
+    const shrunkPlayer = { left: 415, top: 90 };
+    expect(overlayOffset(widePlayer, video, box)).toEqual({ left: 592, top: 288 });
+    expect(overlayOffset(shrunkPlayer, video, fullscreen)).toEqual({ left: 544, top: 288 });
+    expect(overlayOffset({ left: 0, top: 0 }, { left: 160, top: 90, width: 1600, height: 900 }, box)).toEqual({
+      left: 1712,
+      top: 918
     });
   });
 
@@ -96,6 +150,12 @@ describe("player overflow 3-dot", () => {
 
   it("falls back to Chromium's 48px overflow button when the pseudo has no size", () => {
     const video = document.createElement("video");
+    expect(defaultOverflowHit(false)).toEqual({
+      width: FALLBACK_OVERFLOW_BUTTON,
+      height: FALLBACK_OVERFLOW_BUTTON,
+      right: OVERFLOW_BUTTON_RIGHT_INSET,
+      bottom: OVERFLOW_BUTTON_BOTTOM_INSET
+    });
     expect(measureOverflowHit(video)).toEqual({
       width: 48,
       height: 48,
@@ -107,6 +167,49 @@ describe("player overflow 3-dot", () => {
       height: 48,
       right: 48,
       bottom: 24
+    });
+  });
+
+  it("falls back to Chromium's 64px fullscreen controls while the player is fullscreen", () => {
+    const video = document.createElement("video");
+    const player = document.createElement("div");
+    player.appendChild(video);
+    Object.defineProperty(video, "ownerDocument", {
+      configurable: true,
+      value: { fullscreenElement: player }
+    });
+    const overflow = defaultOverflowHit(true);
+    expect(overflow).toEqual({
+      width: FULLSCREEN_OVERFLOW_BUTTON,
+      height: FULLSCREEN_OVERFLOW_BUTTON,
+      right: FULLSCREEN_OVERFLOW_RIGHT_INSET,
+      bottom: OVERFLOW_BUTTON_BOTTOM_INSET
+    });
+    expect(defaultFullscreenHit(overflow)).toEqual({
+      width: 64,
+      height: 64,
+      right: 80,
+      bottom: 24
+    });
+    expect(measureOverflowHit(video)).toEqual(overflow);
+    expect(measureFullscreenHit(video)).toEqual(defaultFullscreenHit(overflow));
+  });
+
+  it("hits the native fullscreen button while Chromium uses 64px fullscreen controls", () => {
+    const bounds = { width: 1470, height: 923, left: 0, top: 0 };
+    const overflow = defaultOverflowHit(true);
+    const fullscreen = defaultFullscreenHit(overflow);
+    // CDP fullscreen 1470×923: fullscreen 1326×835 64×64 (center 1358,867); overflow 1390×835
+    expect(hitControlKind(bounds, 1358, 867, overflow, fullscreen)).toBe("fullscreen");
+    expect(hitControlKind(bounds, 1422, 867, overflow, fullscreen)).toBe("overflow");
+    expect(hitControlKind(bounds, 1294, 867, overflow, fullscreen)).toBeNull();
+    expect(overlayOffset({ left: 0, top: 0 }, { left: 0, top: 0, width: 1470, height: 923 }, overflow)).toEqual({
+      left: 1390,
+      top: 835
+    });
+    expect(overlayOffset({ left: 0, top: 0 }, { left: 0, top: 0, width: 1470, height: 923 }, fullscreen)).toEqual({
+      left: 1326,
+      top: 835
     });
   });
 
@@ -197,6 +300,11 @@ describe("player fullscreen", () => {
     expect(isPlayerFullscreen(doc, player)).toBe(false);
     expect(fullscreenMenuParent(doc, player)).toBeUndefined();
   });
+
+  it("treats another native fullscreen request as exit while the player is fullscreen", () => {
+    expect(videoFullscreenRedirect(false)).toBe("enter");
+    expect(videoFullscreenRedirect(true)).toBe("exit");
+  });
 });
 
 describe("mountMenuInParent", () => {
@@ -217,6 +325,16 @@ describe("toggleOverflowMenu", () => {
     const open = new Menu();
     expect(toggleOverflowMenu(open, dummyMenuOptions())).toBeNull();
     expect((open as Menu & { hidden: boolean }).hidden).toBe(true);
+  });
+});
+
+describe("openOverflowMenu", () => {
+  it("does not setParentElement on the fullscreen player", () => {
+    const player = document.createElement("div");
+    document.body.append(player);
+    const menu = openOverflowMenu({ ...dummyMenuOptions(), parent: player });
+    expect((menu as Menu & { parentEl: HTMLElement | null }).parentEl).toBeNull();
+    player.remove();
   });
 });
 

@@ -1,10 +1,17 @@
-/** Chromium overflow button. Closed shadow; public ::-webkit-media-controls-overflow-button copies the video box. */
+/** Chromium overflow / fullscreen buttons. Closed shadow; public ::-webkit-media-controls-* copies the video box. */
 export const FALLBACK_OVERFLOW_BUTTON = 48;
 
+/** Gap left of the video's right edge. CDP windowed: overflow is 48×48 flush right (right 0). */
+export const OVERFLOW_BUTTON_RIGHT_INSET = 0;
+
 /**
- * Gap under the overlay overflow button (timeline row). CDP at 960×540 and 640×360: always 24px.
+ * Gap under the overlay buttons (timeline row). CDP at 960×540 and 640×360: always 24px.
  */
 export const OVERFLOW_BUTTON_BOTTOM_INSET = 24;
+
+/** CDP fullscreen: overflow/fullscreen/mute are 64×64 with 16px right inset. */
+export const FULLSCREEN_OVERFLOW_BUTTON = 64;
+export const FULLSCREEN_OVERFLOW_RIGHT_INSET = 16;
 
 /** Paint the overflow hit target. Testing only. */
 export const DEBUG_SHOW_OVERFLOW_HIT = false;
@@ -37,7 +44,7 @@ export function isOverflowButtonHit(
   size: OverflowHitBox = {
     width: FALLBACK_OVERFLOW_BUTTON,
     height: FALLBACK_OVERFLOW_BUTTON,
-    right: 0,
+    right: OVERFLOW_BUTTON_RIGHT_INSET,
     bottom: OVERFLOW_BUTTON_BOTTOM_INSET
   }
 ): boolean {
@@ -81,13 +88,56 @@ export function overlayInsets(
   };
 }
 
-export function measureOverflowHit(video: HTMLVideoElement): OverflowHitBox {
-  const fallback: OverflowHitBox = {
+/** Video-relative overlay origin. Survives the player shrink-wrapping after first measure. */
+export function overlayOffset(
+  player: { left: number; top: number },
+  video: { left: number; top: number; width: number; height: number },
+  box: OverflowHitBox
+): { left: number; top: number } {
+  return {
+    left: video.left - player.left + video.width - box.width - box.right,
+    top: video.top - player.top + video.height - box.height - box.bottom
+  };
+}
+
+export function mediaControlFullscreen(video: HTMLVideoElement): boolean {
+  const doc = video.ownerDocument;
+  const full =
+    doc.fullscreenElement ??
+    (doc as Document & { webkitFullscreenElement?: Element | null }).webkitFullscreenElement ??
+    null;
+  if (!full) return false;
+  return full === video || (full instanceof Node && full.contains(video));
+}
+
+export function defaultOverflowHit(fullscreen = false): OverflowHitBox {
+  if (fullscreen) {
+    return {
+      width: FULLSCREEN_OVERFLOW_BUTTON,
+      height: FULLSCREEN_OVERFLOW_BUTTON,
+      right: FULLSCREEN_OVERFLOW_RIGHT_INSET,
+      bottom: OVERFLOW_BUTTON_BOTTOM_INSET
+    };
+  }
+  return {
     width: FALLBACK_OVERFLOW_BUTTON,
     height: FALLBACK_OVERFLOW_BUTTON,
-    right: 0,
+    right: OVERFLOW_BUTTON_RIGHT_INSET,
     bottom: OVERFLOW_BUTTON_BOTTOM_INSET
   };
+}
+
+export function defaultFullscreenHit(overflow: OverflowHitBox): OverflowHitBox {
+  return {
+    width: overflow.width,
+    height: overflow.height,
+    right: overflow.width + overflow.right,
+    bottom: overflow.bottom
+  };
+}
+
+export function measureOverflowHit(video: HTMLVideoElement): OverflowHitBox {
+  const fallback = defaultOverflowHit(mediaControlFullscreen(video));
   const win = viewOf(video);
   if (!win) return fallback;
 
@@ -120,12 +170,7 @@ function viewOf(video: HTMLVideoElement): Window | null {
 
 export function measureFullscreenHit(video: HTMLVideoElement): OverflowHitBox {
   const overflow = measureOverflowHit(video);
-  const fallback: OverflowHitBox = {
-    width: overflow.width,
-    height: overflow.height,
-    right: overflow.width + overflow.right,
-    bottom: overflow.bottom
-  };
+  const fallback = defaultFullscreenHit(overflow);
   const win = viewOf(video);
   if (!win) return fallback;
   const fullscreen = firstControlStyle(win, video, FULLSCREEN_PSEUDOS);
@@ -155,7 +200,7 @@ function firstControlStyle(
   return null;
 }
 
-/** Closed-shadow overflow-button computed style is the video box, not the 48px control. */
+/** Closed-shadow overflow-button computed style is the video box, not the control. */
 function isHostSized(video: HTMLVideoElement, width: number, height: number): boolean {
   const host = video.getBoundingClientRect();
   const hostWidth = video.clientWidth || host.width;

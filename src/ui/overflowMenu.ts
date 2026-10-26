@@ -18,7 +18,8 @@ export function openOverflowMenu(options: {
 }): Menu {
   const menu = new Menu();
   menu.setUseNativeMenu(false);
-  if (options.parent) menu.setParentElement(options.parent);
+  // Do not setParentElement(player). Menu hides when parentEl.isShown() is false,
+  // and a :fullscreen node has offsetParent null so Obsidian treats it as hidden.
   for (const row of buildSubtitleMenuRows({
     tracks: options.tracks,
     activeTrackId: options.activeTrackId
